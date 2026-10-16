@@ -168,15 +168,16 @@ export function columnsFor(section: Section) {
     { key: "createdAt", label: "JOINED", render: (row: Row) => row.createdAt ? new Date(String(row.createdAt)).toLocaleDateString("en-IN") : "Recently" },
   ];
   if (section === "Vendors") return [
-    { key: "name", label: "VENDOR" }, { key: "contactPerson", label: "CONTACT PERSON" }, { key: "mobile", label: "MOBILE" }, { key: "email", label: "EMAIL" },
+
+    {key:"vendorCode",label: "VENDOR CODE" },{ key: "name", label: "VENDOR" },{ key: "contactPerson", label: "CONTACT PERSON" }, { key: "mobile", label: "MOBILE" }, { key: "email", label: "EMAIL" },
     { key: "status", label: "STATUS", render: (row: Row) => <StatusPill status={String(row.status)} /> },
   ];
   if (section === "Agents") return [
-    { key: "fullName", label: "AGENT" }, { key: "vendorName", label: "VENDOR" }, { key: "mobile", label: "MOBILE" },
+    { key: "agentCode", label: "ID" }, { key: "fullName", label: "AGENT" }, { key: "vendorName", label: "VENDOR" }, { key: "mobile", label: "MOBILE" },
     { key: "status", label: "STATUS", render: (row: Row) => <StatusPill status={String(row.status)} /> },
   ];
   return [
-    { key: "name", label: "PLAN" }, { key: "durationMonths", label: "DURATION", render: (row: Row) => `${row.durationMonths} months` },
+   { key: "planCode", label: "Plan Code" }, { key: "name", label: "PLAN" }, { key: "durationMonths", label: "DURATION", render: (row: Row) => `${row.durationMonths} months` },
     { key: "price", label: "BASE PRICE", render: (row: Row) => formatCurrency(Number(row.price)) }, { key: "gstPercentage", label: "GST", render: (row: Row) => `${row.gstPercentage}%` },
     { key: "status", label: "STATUS", render: (row: Row) => <StatusPill status={String(row.status)} /> },
   ];

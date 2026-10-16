@@ -31,6 +31,7 @@ export async function apiRequest<T>(
   if (response.status === 204) return undefined as T;
 
   const body = await response.text();
+  console.log("API Response Body:", body); // Log the response body for debugging
   return body ? JSON.parse(body) as T : undefined as T;
 }
 

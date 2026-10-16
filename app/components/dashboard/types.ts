@@ -34,14 +34,14 @@ export type NormalizedPageResponse<T> = {
 };
 export type PageMetadata = Pick<NormalizedPageResponse<Row>, "page" | "size" | "totalElements" | "totalPages">;
 
-export type Farmer = Row & { id: string; customerCode: string; fullName: string; mobile: string; district?: string };
-export type Vendor = Row & { id: string; name: string; contactPerson?: string; mobile?: string; email?: string; status: Status };
+export type Farmer = Row & { id: string; customerCode: string; fullName: string; aadhaar:string; mobile: string; district?: string };
+export type Vendor = Row & { id: string; vendorCode:string; name: string; contactPerson?: string; mobile?: string; email?: string; status: Status };
 export type Agent = Row & { id: string; fullName: string; mobile: string; vendorName?: string; status: Status };
 export type Plan = Row & { id: string; name: string; durationMonths: number; price: number; gstPercentage: number; status: Status };
 export type Policy = Row & { id: string; policyNumber: string; farmerName: string; planName: string; startDate: string; endDate: string; totalAmount: number; status: Status };
 export type RecycleBinEntry = { resource: string; id: string; label: string; deletedAt: string };
 export type ResourceData = { policies: Policy[]; farmers: Farmer[]; vendors: Vendor[]; agents: Agent[]; plans: Plan[]; recycleBin: RecycleBinEntry[] };
-export type ReferenceData = Pick<ResourceData, "farmers" | "vendors" | "plans">;
+export type ReferenceData = Pick<ResourceData, "farmers" | "vendors" | "plans" | "agents">;
 export type AuthState = "signedOut" | "loading" | "authenticated" | "error";
 export type TableColumn = { key: string; label: string; render?: (row: Row) => ReactNode };
 export type RecordAction = (row: Row) => void;

@@ -63,7 +63,7 @@ export default function DashboardClient() {
   const directoryQueriesRef = useRef(directoryQueries);
   const [directoryRows, setDirectoryRows] = useState<Partial<Record<ListSection, Row[]>>>({});
   const [pageMetadata, setPageMetadata] = useState<Partial<Record<ListSection, PageMetadata>>>({});
-  const [formOptions, setFormOptions] = useState<ReferenceData>({ farmers: [], vendors: [], plans: [] });
+  const [formOptions, setFormOptions] = useState<ReferenceData>({ farmers: [], vendors: [], plans: [],agents: [] });
   const [vendorOptions, setVendorOptions] = useState<Row[]>([]);
   const directoryRequestIds = useRef<Partial<Record<ListSection, number>>>({});
   const [authState, setAuthState] = useState<AuthState>("signedOut");
@@ -99,7 +99,8 @@ export default function DashboardClient() {
     if (!preserveWorkspace) setAuthState("loading");
     setAuthMessage("");
     try {
-      const [policies, farmers, vendors, agents, plans, recycleBin, allVendorOptions, allFarmerOptions, allPlanOptions] = await Promise.all([
+      const [policies, farmers, vendors, agents, plans, recycleBin, allVendorOptions, allFarmerOptions, allPlanOptions,allAgentOptions] = await Promise.all([
+        
         fetchPage<ResourceData["policies"][number]>("/api/v1/policies", token, directoryQueriesRef.current.Policies),
         fetchPage<ResourceData["farmers"][number]>("/api/v1/farmers", token, directoryQueriesRef.current.Farmers),
         fetchPage<ResourceData["vendors"][number]>("/api/v1/vendors", token, directoryQueriesRef.current.Vendors),
@@ -109,6 +110,7 @@ export default function DashboardClient() {
         fetchPage<ResourceData["vendors"][number]>("/api/v1/vendors", token, { ...directoryQueriesRef.current.Vendors, size: 100 }),
         fetchPage<ResourceData["farmers"][number]>("/api/v1/farmers", token, { ...directoryQueriesRef.current.Farmers, size: 100 }),
         fetchPage<ResourceData["plans"][number]>("/api/v1/policy-plans", token, { ...directoryQueriesRef.current.Plans, size: 100 }, "&activeOnly=false"),
+        fetchPage<ResourceData["agents"][number]>("/api/v1/agents", token, { ...directoryQueriesRef.current.Agents, size: 100 }),
       ]);
       setData({
         policies: policies.content,
@@ -137,6 +139,7 @@ export default function DashboardClient() {
         farmers: allFarmerOptions.content,
         vendors: allVendorOptions.content,
         plans: allPlanOptions.content,
+         agents: allAgentOptions.content,
       });
       setAuthState("authenticated");
       setToast("Data synced");
@@ -258,13 +261,14 @@ export default function DashboardClient() {
     event.preventDefault();
     if (section === "Overview" || section === "Recycle Bin") return;
     const form = new FormData(event.currentTarget);
-    const payload: Record<string, string | number> = {};
+    const payload: Record<string, string | number | null> = {};
     form.forEach((value, key) => { if (String(value).trim()) payload[key] = String(value); });
     if (section === "Plans") {
       payload.durationMonths = Number(payload.durationMonths);
       payload.price = Number(payload.price);
       payload.gstPercentage = Number(payload.gstPercentage);
     }
+    if (!payload.agentId) payload.agentId = null;
     const endpoint = endpointBySection[section];
     if (!endpoint) return;
     const resourcePath = apiResourceBySection[section];
@@ -488,7 +492,7 @@ export default function DashboardClient() {
     }
     const resource = apiResourceBySection[target];
     const exportQuery = target === "Overview"
-      ? { ...initialDirectoryQueries.Policies, sort: "id", direction: "DESC" as const }
+      ? { ...initialDirectoryQueries.Policies, sort: "createdAt", direction: "DESC" as const }
       : directoryQuery ?? directoryQueriesRef.current[target];
     const basePath = target === "Overview" ? "/api/v1/exports" : resource ? `/api/v1/exports/${encodeURIComponent(resource)}` : null;
     if (!basePath || !exportQuery) return;

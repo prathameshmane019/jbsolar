@@ -7,23 +7,23 @@ import { PAGE_SIZE_OPTIONS, type IconName, type Row, type TableColumn } from "./
 export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const };
   const paths: Record<IconName, ReactNode> = {
-    grid: <><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></>,
-    file: <><path d="M13 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V9z"/><path d="M13 3v6h6M8 14h8M8 17h8"/></>,
-    users: <><path d="M16 21v-1.7a3.3 3.3 0 0 0-3.3-3.3H6.3A3.3 3.3 0 0 0 3 19.3V21"/><circle cx="9.5" cy="7" r="3.5"/><path d="M17 11a3.5 3.5 0 0 0 0-7M21 21v-1.7a3.3 3.3 0 0 0-2.5-3.2"/></>,
-    building: <><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 21v-4h6v4M8 7h1m6 0h1M8 11h1m6 0h1"/></>,
-    badge: <><circle cx="12" cy="8" r="5"/><path d="m8.5 12-1 9 4.5-2.5 4.5 2.5-1-9M10 8l1.3 1.3L14 6.8"/></>,
-    layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></>,
-    search: <><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></>,
-    plus: <><path d="M12 5v14M5 12h14"/></>,
-    arrow: <><path d="M5 12h14M13 6l6 6-6 6"/></>,
-    download: <><path d="M12 3v12m-5-5 5 5 5-5M4 18v3h16v-3"/></>,
-    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></>,
-    close: <><path d="m18 6-12 12M6 6l12 12"/></>,
-    chevron: <path d="m9 18 6-6-6-6"/>,
-    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></>,
-    refresh: <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 18 6.5L20 12M4 12l2 5.5A7 7 0 0 0 18.4 15"/></>,
-    eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.5"/></>,
-    trash: <><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/></>,
+    grid: <><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></>,
+    file: <><path d="M13 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V9z" /><path d="M13 3v6h6M8 14h8M8 17h8" /></>,
+    users: <><path d="M16 21v-1.7a3.3 3.3 0 0 0-3.3-3.3H6.3A3.3 3.3 0 0 0 3 19.3V21" /><circle cx="9.5" cy="7" r="3.5" /><path d="M17 11a3.5 3.5 0 0 0 0-7M21 21v-1.7a3.3 3.3 0 0 0-2.5-3.2" /></>,
+    building: <><rect x="4" y="3" width="16" height="18" rx="1.5" /><path d="M9 21v-4h6v4M8 7h1m6 0h1M8 11h1m6 0h1" /></>,
+    badge: <><circle cx="12" cy="8" r="5" /><path d="m8.5 12-1 9 4.5-2.5 4.5 2.5-1-9M10 8l1.3 1.3L14 6.8" /></>,
+    layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 12 9 5 9-5M3 16l9 5 9-5" /></>,
+    search: <><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 4.5 4.5" /></>,
+    plus: <><path d="M12 5v14M5 12h14" /></>,
+    arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
+    download: <><path d="M12 3v12m-5-5 5 5 5-5M4 18v3h16v-3" /></>,
+    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></>,
+    close: <><path d="m18 6-12 12M6 6l12 12" /></>,
+    chevron: <path d="m9 18 6-6-6-6" />,
+    sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></>,
+    refresh: <><path d="M20 7v5h-5M4 17v-5h5" /><path d="M5.6 9A7 7 0 0 1 18 6.5L20 12M4 12l2 5.5A7 7 0 0 0 18.4 15" /></>,
+    eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" /><circle cx="12" cy="12" r="2.5" /></>,
+    trash: <><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3" /></>,
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
@@ -41,7 +41,33 @@ export function Metric({ label, value, note, icon, tint }: { label: string; valu
 export function DataTable({ rows, columns, loading, caption = "Records", onToggleStatus, onEditRecord, onViewRecord, onDeleteRecord, onRestoreRecord, onPurgeRecord }: { rows: Row[]; columns: TableColumn[]; loading: boolean; caption?: string; onToggleStatus?: (row: Row) => void; onEditRecord?: (row: Row) => void; onViewRecord?: (row: Row) => void; onDeleteRecord?: (row: Row) => void; onRestoreRecord?: (row: Row) => void; onPurgeRecord?: (row: Row) => void }) {
   const hasActions = Boolean(onToggleStatus || onEditRecord || onViewRecord || onDeleteRecord || onRestoreRecord || onPurgeRecord);
   const columnCount = columns.length + Number(hasActions);
-  return <div className="overflow-x-auto" tabIndex={0} aria-label="Scrollable records table"><table className="w-full min-w-[670px] border-collapse text-left"><caption className="sr-only">{caption}</caption><thead><tr className="border-y border-[#edf0e9] bg-[#fafbf8]">{columns.map(column => <th scope="col" key={column.key} className="px-5 py-3 text-[9px] font-semibold tracking-[0.9px] text-[#626c60] sm:px-6">{column.label}</th>)}{hasActions && <th scope="col" className="px-5 py-3 text-[9px] font-semibold tracking-[0.9px] text-[#626c60]">ACTIONS</th>}</tr></thead><tbody>{loading && rows.length === 0 ? <tr><td colSpan={columnCount} className="px-6 py-12 text-center text-[12px] text-[#687266]">Loading records...</td></tr> : rows.length === 0 ? <tr><td colSpan={columnCount} className="px-6 py-12 text-center text-[12px] text-[#687266]">No records found.</td></tr> : rows.map((row, index) => <tr key={String(row.id ?? index)} className="border-b border-[#f0f1ed] last:border-0 transition-colors hover:bg-[#fbfcf9]">{columns.map((column, cellIndex) => <td key={column.key} className={`whitespace-nowrap px-5 py-3.5 text-[11px] sm:px-6 ${cellIndex === 0 ? "font-semibold text-[#313a30]" : "text-[#687266]"}`}>{column.render ? column.render(row) : String(row[column.key] ?? "—")}</td>)}{hasActions && <td className="px-5 py-3.5"><div className="flex items-center gap-3">{onViewRecord && <button type="button" onClick={() => onViewRecord(row)} aria-label={`View ${String(row.fullName ?? row.name ?? row.policyNumber ?? row.label ?? "record")}`} className="rounded p-1 text-[#596959] hover:bg-[#edf2e9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]"><Icon name="eye" size={15} /></button>}{onToggleStatus && <button type="button" onClick={() => onToggleStatus(row)} aria-label={`${row.status === "ACTIVE" ? "Deactivate" : "Activate"} ${String(row.name ?? row.fullName ?? "record")}`} className="text-[10px] font-semibold text-[#477e50] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]">{row.status === "ACTIVE" ? "Deactivate" : "Activate"}</button>}{onEditRecord && <button type="button" onClick={() => onEditRecord(row)} aria-label={`Edit ${String(row.fullName ?? row.name ?? row.policyNumber ?? "record")}`} className="text-[10px] font-semibold text-[#477e50] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]">Edit</button>}{onDeleteRecord && <button type="button" onClick={() => onDeleteRecord(row)} aria-label={`Delete ${String(row.fullName ?? row.name ?? row.policyNumber ?? "record")}`} className="rounded p-1 text-[#a94335] hover:bg-[#fbefec] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#a94335]"><Icon name="trash" size={15} /></button>}{onRestoreRecord && <button type="button" onClick={() => onRestoreRecord(row)} aria-label={`Restore ${String(row.label ?? "record")}`} className="rounded p-1 text-[#477e50] hover:bg-[#edf2e9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]"><Icon name="refresh" size={15} /></button>}{onPurgeRecord && <button type="button" onClick={() => onPurgeRecord(row)} aria-label={`Permanently delete ${String(row.label ?? "record")}`} className="rounded p-1 text-[#a94335] hover:bg-[#fbefec] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#a94335]"><Icon name="trash" size={15} /></button>}</div></td>}</tr>)}</tbody></table></div>;
+  return <div className="overflow-x-auto" tabIndex={0} aria-label="Scrollable records table">
+    <table className="w-full min-w-[670px] border-collapse text-left">
+      <caption className="sr-only">{caption}</caption>
+      <thead>
+        <tr className="border-y border-[#edf0e9] bg-[#fafbf8]">{columns.map(column =>
+          <th scope="col" key={column.key} className="px-5 py-3 text-[9px] font-semibold tracking-[0.9px] text-[#626c60] sm:px-6">{column.label}</th>
+        )}{hasActions && <th scope="col" className="px-5 py-3 text-[9px] font-semibold tracking-[0.9px] text-[#626c60]">ACTIONS</th>}</tr>
+      </thead>
+      <tbody>{loading && rows.length === 0 ? <tr>
+        <td colSpan={columnCount} className="px-6 py-12 text-center text-[12px] text-[#687266]">Loading records...</td>
+      </tr> : rows.length === 0 ? <tr>
+        <td colSpan={columnCount} className="px-6 py-12 text-center text-[12px] text-[#687266]">No records found.</td>
+      </tr> : rows.map((row, index) => <tr key={String(row.id ?? index)} className="border-b border-[#f0f1ed] last:border-0 transition-colors hover:bg-[#fbfcf9]">{columns.map((column, cellIndex) => <td key={column.key} className={`whitespace-nowrap px-5 py-3.5 text-[11px] sm:px-6 ${cellIndex === 0 ? "font-semibold text-[#313a30]" : "text-[#687266]"}`}>{column.render ? column.render(row) : String(row[column.key] ?? "—")}</td>)}{hasActions && <td className="px-5 py-3.5"><div className="flex items-center gap-3">{onViewRecord &&
+        <button type="button" onClick={() => onViewRecord(row)} aria-label={`View ${String(row.fullName ?? row.name ?? row.policyNumber ?? row.label ?? "record")}`} className="rounded p-1 text-[#596959] hover:bg-[#edf2e9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]"><Icon name="eye" size={15} /></button>
+      }{onToggleStatus && <button type="button" onClick={() => onToggleStatus(row)} aria-label={`${row.status === "ACTIVE" ? "Deactivate" : "Activate"} ${String(row.name ?? row.fullName ?? "record")}`} className="text-[10px] font-semibold text-[#477e50] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]">{row.status === "ACTIVE" ? "Deactivate" : "Activate"}</button>
+        }{onEditRecord &&
+          <button type="button" onClick={() => onEditRecord(row)} aria-label={`Edit ${String(row.fullName ?? row.name ?? row.policyNumber ?? "record")}`} className="text-[10px] font-semibold text-[#477e50] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]">Edit</button>
+        }{onDeleteRecord &&
+          <button type="button" onClick={() => onDeleteRecord(row)} aria-label={`Delete ${String(row.fullName ?? row.name ?? row.policyNumber ?? "record")}`} className="rounded p-1 text-[#a94335] hover:bg-[#fbefec] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#a94335]"><Icon name="trash" size={15} /></button>
+        }{onRestoreRecord && <button type="button" onClick={() => onRestoreRecord(row)} aria-label={`Restore ${String(row.label ?? "record")}`} className="rounded p-1 text-[#477e50] hover:bg-[#edf2e9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]"><Icon name="refresh" size={15} /></button>}{onPurgeRecord &&
+          <button type="button" onClick={() => onPurgeRecord(row)} aria-label={`Permanently delete ${String(row.label ?? "record")}`} className="rounded p-1 text-[#a94335] hover:bg-[#fbefec] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#a94335]"><Icon name="trash" size={15} /></button>
+        }</div>
+      </td>}
+      </tr>)
+      }</tbody>
+    </table>
+  </div>;
 }
 
 export function Pagination({
@@ -93,12 +119,68 @@ export function Pagination({
   );
 }
 
+const HIDDEN_KEYS = new Set(["id", "resource", "createdBy", "deletedAt"]);
+
+const isInternalKey = (key: string) => HIDDEN_KEYS.has(key) || key.endsWith("Id");
+
+// Order and labels for the fields you want to show first.
+const LABELS: Record<string, string> = {
+  policyNumber: "Policy number",
+  farmerName: "Farmer",
+  farmerCode: "Farmer ID",
+  planName: "Plan",
+  planCode: "Plan code",
+  vendorName: "Vendor",
+  vendorCode: "Vendor code",
+  agentName: "Agent",
+  agentCode: "Agent ID",
+  startDate: "Start date",
+  endDate: "End date",
+  amount: "Base amount",
+  gstAmount: "GST amount",
+  totalAmount: "Total premium",
+  pumpPowerHp: "Pump power (HP)",
+  motorHeadMeters: "Motor head (m)",
+};
+
+const prettyKey = (key: string) =>
+  LABELS[key] ?? key.replace(/([A-Z])/g, " $1").replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
+
+const DATE_KEYS = new Set(["startDate", "endDate"]);
+const DATETIME_KEYS = new Set(["createdAt", "updatedAt", "purchasedAt", "deletedAt"]);
+
+function formatValue(key: string, value: unknown): string {
+  if (typeof value === "object") return JSON.stringify(value);
+  const text = String(value);
+  if (DATE_KEYS.has(key)) {
+    return new Date(text + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  }
+  if (DATETIME_KEYS.has(key)) {
+    return new Date(text).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+  return text;
+}
 export function RecordDetails({ record, loading }: { record: Row; loading: boolean }) {
-  const entries = Object.entries(record).filter(([key, value]) => key !== "id" && value !== null && value !== undefined && value !== "");
+  const known = Object.keys(LABELS);
+  const entries = Object.entries(record)
+    .filter(([key, value]) => !isInternalKey(key) && value !== null && value !== undefined && value !== "")
+    .sort(([a], [b]) => {
+      const ia = known.indexOf(a), ib = known.indexOf(b);
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+    });
+
   return <div>
-    {loading && <p role="status" className="mb-4 text-[11px] text-[#687266]">Loading full farmer record...</p>}
-    {record.id && <p className="mb-4 break-all rounded-[5px] bg-[#f6f7f3] px-3 py-2 font-mono text-[10px] text-[#788276]">ID · {String(record.id)}</p>}
-    <dl className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">{entries.map(([key, value]) => <div key={key} className="min-w-0"><dt className="text-[9px] font-semibold uppercase tracking-[0.8px] text-[#92988e]">{key.replace(/([A-Z])/g, " $1")}</dt><dd className="mt-1 break-words text-[12px] font-medium text-[#354034]">{key === "status" ? <StatusPill status={String(value)} /> : typeof value === "object" ? JSON.stringify(value) : String(value)}</dd></div>)}</dl>
+    {loading && <p role="status" className="mb-4 text-[11px] text-[#687266]">Loading full record...</p>}
+    <dl className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
+      {entries.map(([key, value]) => (
+        <div key={key} className="min-w-0">
+          <dt className="text-[9px] font-semibold uppercase tracking-[0.8px] text-[#92988e]">{prettyKey(key)}</dt>
+          <dd className="mt-1 break-words text-[12px] font-medium text-[#354034]">
+           {key === "status" ? <StatusPill status={String(value)} /> : formatValue(key, value)}
+          </dd>
+        </div>
+      ))}
+    </dl>
   </div>;
 }
 
