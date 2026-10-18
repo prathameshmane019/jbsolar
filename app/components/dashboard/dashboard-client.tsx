@@ -94,6 +94,21 @@ function directoryQueryKey(query: DirectoryQuery, section: ListSection): string 
   return `${serializeDirectoryQuery(query)}${section === "Plans" ? "&activeOnly=false" : ""}`;
 }
 
+function requestErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiError)) return fallback;
+  if (error.status === 400 || error.status === 422) return "Please check the information and try again.";
+  if (error.status === 403) return "You do not have permission to perform this action.";
+  if (error.status === 404) return "This item could not be found. Refresh the list and try again.";
+  if (error.status === 409) return "This change conflicts with the current record. Refresh and try again.";
+  if (error.status === 429) {
+    return error.retryAfterSeconds === undefined
+      ? "Too many requests. Please wait a moment and try again."
+      : `Too many requests. Please try again in ${Math.ceil(error.retryAfterSeconds)} seconds.`;
+  }
+  if (error.status >= 500) return "The service is temporarily unavailable. Please try again shortly.";
+  return fallback;
+}
+
 export default function DashboardClient() {
   const [section, setSection] = useState<Section>("Overview");
   const [data, setData] = useState<ResourceData>(emptyData);
@@ -273,17 +288,16 @@ export default function DashboardClient() {
       };
       lastSyncedAtRef.current = Date.now();
       setAuthState("authenticated");
-      setToast("Data synced");
     } catch (error) {
       if (requestId !== refreshRequestIdRef.current) return;
       if (error instanceof DOMException && error.name === "AbortError") return;
-      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      if (error instanceof ApiError && error.status === 401) {
         signOut();
         setAuthMessage("Your session has expired. Please sign in again.");
       } else if (preserveWorkspace) {
-        setToast("Could not refresh data. Your current workspace is still available.");
+        setToast(requestErrorMessage(error, "Could not refresh your workspace. Your saved data is still available."));
       } else {
-        setAuthMessage("Could not connect to the JB Solar API. Check the API URL and try again.");
+        setAuthMessage(requestErrorMessage(error, "We could not connect right now. Check your connection and try again."));
         setAuthState("error");
       }
     } finally {
@@ -323,20 +337,13 @@ export default function DashboardClient() {
   }, [refreshData]);
 
   const handleRequestError = useCallback((error: unknown, message: string) => {
-    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+    if (error instanceof ApiError && error.status === 401) {
       clearWorkspaceCache();
       signOut();
       setAuthMessage("Your session has expired. Please sign in again.");
       return;
     }
-    if (error instanceof ApiError && error.status === 429) {
-      const retryMessage = error.retryAfterSeconds === undefined
-        ? " Please wait before trying again."
-        : ` Please try again in ${Math.ceil(error.retryAfterSeconds)} seconds.`;
-      setToast(`${message}${retryMessage}`);
-      return;
-    }
-    setToast(message);
+    setToast(requestErrorMessage(error, message));
   }, [signOut]);
 
   const ensureVendorOptions = useCallback(async (): Promise<ResourceData["vendors"]> => {
@@ -364,7 +371,7 @@ export default function DashboardClient() {
         return vendors.content;
       } catch (error) {
         if (requestId !== workspaceRequestIdRef.current) return [];
-        handleRequestError(error, "Could not load vendor filter options.");
+        handleRequestError(error, "Vendor options are unavailable right now. Please try again.");
         return [];
       } finally {
         if (requestId === workspaceRequestIdRef.current) vendorOptionsRequestRef.current = null;
@@ -401,7 +408,7 @@ export default function DashboardClient() {
       return true;
     } catch (error) {
       if (requestId !== workspaceRequestIdRef.current) return false;
-      handleRequestError(error, "Could not load the form options. Please try again.");
+      handleRequestError(error, "Some form options could not be loaded. Please try again.");
       return false;
     } finally {
       setLoading(false);
@@ -466,12 +473,7 @@ export default function DashboardClient() {
     } catch (error) {
       if (directoryRequestIds.current[target] !== requestId) return false;
       if (error instanceof DOMException && error.name === "AbortError") return false;
-      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-        signOut();
-        setAuthMessage("Your session has expired. Please sign in again.");
-      } else {
-        setToast(`Could not load ${target.toLowerCase()}.`);
-      }
+      handleRequestError(error, `${target} could not be loaded. Please try again.`);
       return false;
     } finally {
       if (directoryRequestIds.current[target] === requestId) {
@@ -479,7 +481,7 @@ export default function DashboardClient() {
         setLoading(false);
       }
     }
-  }, [signOut]);
+  }, [handleRequestError]);
 
   useEffect(() => {
     if (authState !== "authenticated" || section === "Overview" || section === "Recycle Bin") return;
@@ -505,7 +507,7 @@ export default function DashboardClient() {
       return true;
     } catch (error) {
       if (requestId !== workspaceRequestIdRef.current) return false;
-      handleRequestError(error, "Could not load the recycle bin.");
+      handleRequestError(error, "The recycle bin is unavailable right now. Please try again.");
       return false;
     } finally {
       setLoading(false);
@@ -534,12 +536,29 @@ export default function DashboardClient() {
         setAuthState("signedOut");
         return;
       }
-      if (!response.ok) throw new Error("Login failed");
+      if (response.status === 401 || response.status === 403) {
+        setAuthMessage("Those sign-in details could not be verified. Check them and try again.");
+        setAuthState("signedOut");
+        return;
+      }
+      if (response.status >= 500) {
+        setAuthMessage("Sign-in is temporarily unavailable. Please try again shortly.");
+        setAuthState("signedOut");
+        return;
+      }
+      if (!response.ok) {
+        setAuthMessage("We could not sign you in. Please check your details and try again.");
+        setAuthState("signedOut");
+        return;
+      }
       const result = await response.json();
+      if (!result || typeof result.accessToken !== "string" || !result.accessToken) {
+        throw new TypeError("The sign-in response was invalid.");
+      }
       window.localStorage.setItem("jbsolar_access_token", result.accessToken);
       await refreshData(result.accessToken);
     } catch {
-      setAuthMessage("Sign in failed. Check your credentials and API connection.");
+      setAuthMessage("We could not complete sign-in. Check your connection and try again.");
       setAuthState("signedOut");
     } finally {
       setLoading(false);
@@ -575,7 +594,7 @@ export default function DashboardClient() {
       void loadDirectoryPage(section, directoryQueriesRef.current[section], true);
       setToast(`${recordLabel(section)} created`);
     } catch (error) {
-      handleRequestError(error, "Could not save this record. Check the API connection.");
+      handleRequestError(error, "We could not save this record. Please try again.");
       return;
     }
     setModal(null);
@@ -613,7 +632,7 @@ export default function DashboardClient() {
       setEditingRecord(null);
       setModal(null);
     } catch (error) {
-      handleRequestError(error, "Could not update this record. Check the API connection.");
+      handleRequestError(error, "We could not update this record. Please try again.");
     } finally {
       editSavingRef.current = false;
       setEditSaving(false);
@@ -672,7 +691,7 @@ export default function DashboardClient() {
       if (requestId !== recordRequestId.current) return;
       if (requestId === recordRequestId.current) setSelectedRecord({ section: recordSection, row: detail });
     } catch (error) {
-      if (requestId === recordRequestId.current) handleRequestError(error, `Could not load ${recordLabel(recordSection).toLowerCase()} details.`);
+      if (requestId === recordRequestId.current) handleRequestError(error, `${recordLabel(recordSection)} details are unavailable right now.`);
     } finally {
       if (requestId === recordRequestId.current) setRecordLoading(false);
     }
@@ -708,14 +727,9 @@ export default function DashboardClient() {
       } else if (error instanceof ApiError && error.status === 403) {
         setPolicyFilesError("You do not have permission to view policy documents.");
       } else if (error instanceof ApiError && error.status === 429) {
-        const retryMessage = error.retryAfterSeconds === undefined
-          ? "Please wait before trying again."
-          : `Try again in ${Math.ceil(error.retryAfterSeconds)} seconds.`;
-        setPolicyFilesError(`The server is limiting requests. ${retryMessage}`);
-      } else if (error instanceof ApiError) {
-        setPolicyFilesError(`Could not load policy documents (HTTP ${error.status}). Please try again.`);
+        setPolicyFilesError(requestErrorMessage(error, "Too many requests. Please wait and try again."));
       } else {
-        setPolicyFilesError("Could not load policy documents. Check the connection and try again.");
+        setPolicyFilesError(requestErrorMessage(error, "Policy documents are unavailable right now. Check your connection and try again."));
       }
     } finally {
       if (requestId === policyFilesRequestIdRef.current) setPolicyFilesLoading(false);
@@ -753,7 +767,7 @@ export default function DashboardClient() {
       lastSyncedAtRef.current = Date.now();
     } catch (error) {
       if (requestId === invoiceRequestIdRef.current) {
-        handleRequestError(error, "Could not load invoice details.");
+        handleRequestError(error, "Invoice details are unavailable right now. Please try again.");
       }
     } finally {
       if (requestId === invoiceRequestIdRef.current) setInvoiceLoading(false);
@@ -826,15 +840,14 @@ export default function DashboardClient() {
           ? `${recordLabel(deleteSection)} moved to recycle bin`
           : `${recordLabel(deleteSection)} deleted; the list could not be refreshed.`);
       } catch (error) {
-        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-          signOut();
-          setAuthMessage("Your session has expired. Please sign in again.");
+        if (error instanceof ApiError && error.status === 401) {
+          handleRequestError(error, "Your session has expired. Please sign in again.");
         } else {
-          setToast("Record deleted, but the recycle bin could not be refreshed.");
+          setToast(`Record moved to the recycle bin, but the list could not be refreshed. ${requestErrorMessage(error, "Please refresh and try again.")}`);
         }
       }
     } catch (error) {
-      handleRequestError(error, `Could not delete this ${recordLabel(deleteSection).toLowerCase()}. No local data was changed.`);
+      handleRequestError(error, `We could not delete this ${recordLabel(deleteSection).toLowerCase()}. No changes were made.`);
     } finally {
       setDeleteLoading(false);
     }
@@ -855,19 +868,35 @@ export default function DashboardClient() {
     }
     try {
       await apiRequest<void>(`/api/v1/recycle-bin/${encodeURIComponent(resource)}/${row.id}/restore`, token, { method: "POST" });
-      setData(current => ({ ...current, recycleBin: current.recycleBin.filter(item => item.id !== row.id || item.resource !== resource) }));
-      const [recycleBin, listRefreshed] = await Promise.all([
+    } catch (error) {
+      handleRequestError(error, "We could not restore this record. Please try again.");
+      return;
+    }
+
+    setData(current => ({ ...current, recycleBin: current.recycleBin.filter(item => item.id !== row.id || item.resource !== resource) }));
+    const [recycleBinResult, directoryResult] = await Promise.allSettled([
         apiRequest<ResourceData["recycleBin"]>("/api/v1/recycle-bin", token),
         loadDirectoryPage(targetSection, directoryQueriesRef.current[targetSection], true),
-      ]);
-      setData(current => ({ ...current, recycleBin }));
-      recycleBinLoadedRef.current = true;
-      setToast(listRefreshed
-        ? `${String(row.label ?? "Record")} restored`
-        : `${String(row.label ?? "Record")} restored; the directory could not be refreshed.`);
-    } catch (error) {
-      handleRequestError(error, "Record was restored, but the lists could not be refreshed.");
+    ]);
+    const recycleBinRefreshed = recycleBinResult.status === "fulfilled";
+    const directoryRefreshed = directoryResult.status === "fulfilled" && directoryResult.value;
+    recycleBinLoadedRef.current = recycleBinRefreshed;
+    if (recycleBinRefreshed) {
+      setData(current => ({ ...current, recycleBin: recycleBinResult.value }));
     }
+    const refreshError = recycleBinResult.status === "rejected"
+      ? recycleBinResult.reason
+      : directoryResult.status === "rejected"
+        ? directoryResult.reason
+        : undefined;
+    if (refreshError instanceof ApiError && refreshError.status === 401) {
+      handleRequestError(refreshError, "Your session has expired. Please sign in again.");
+      return;
+    }
+    const label = String(row.label ?? "Record");
+    setToast(recycleBinRefreshed && directoryRefreshed
+      ? `${label} restored`
+      : `${label} restored. Some lists could not be refreshed. ${requestErrorMessage(refreshError, "Refresh to see the latest data.")}`);
   }
 
   async function confirmPurge() {
@@ -885,7 +914,7 @@ export default function DashboardClient() {
       setRecordToPurge(null);
       setToast(`${String(recordToPurge.row.label ?? "Record")} permanently deleted`);
     } catch (error) {
-      handleRequestError(error, "Could not permanently delete this record.");
+      handleRequestError(error, "We could not permanently delete this record. Please try again.");
     } finally {
       setDeleteLoading(false);
     }
@@ -917,7 +946,7 @@ export default function DashboardClient() {
       URL.revokeObjectURL(objectUrl);
       setToast("Export downloaded");
     } catch (error) {
-      handleRequestError(error, "Could not download the export.");
+      handleRequestError(error, "Your export could not be prepared. Please try again.");
     }
   }
 
@@ -963,13 +992,12 @@ export default function DashboardClient() {
         <div className="mb-8 flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-[10px] bg-[#163b2d] text-[#c5e86c]"><Icon name="sun" size={22} /></div><div><p className="text-[16px] font-bold">JB Solar</p><p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[1.5px] text-[#788276]">Operations</p></div></div>
         <section aria-labelledby="sign-in-title" className="rounded-[8px] border border-[#e4e8df] bg-white p-6 shadow-sm sm:p-8">
           {authState === "loading" ? <div role="status" className="py-8 text-center"><div aria-hidden="true" className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[#dce6d9] border-t-[#285c3b]" /><h1 className="mt-5 text-[16px] font-semibold">Loading your workspace</h1><p className="mt-2 text-[12px] text-[#687266]">Connecting securely to JB Solar.</p></div> : <>
-            <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-[#668263]">Secure workspace</p><h1 id="sign-in-title" className="mt-2 text-[22px] font-semibold">Sign in to continue</h1><p className="mt-2 text-[12px] leading-5 text-[#687266]">Use your administrator credentials to access operations data.</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[1.4px] text-[#668263]">Secure workspace</p><h1 id="sign-in-title" className="mt-2 text-[22px] font-semibold">Sign in to continue</h1><p className="mt-2 text-[12px] leading-5 text-[#687266]">Sign in with your JB Solar account to access your workspace.</p>
             {authMessage && <div role="alert" className="mt-4 rounded-[5px] border border-[#f0d3ca] bg-[#fff5f1] px-3 py-2.5 text-[11px] leading-4 text-[#a44c3a]">{authMessage}</div>}
-            {authState === "error" && <button type="button" onClick={() => void refreshData()} className="mt-4 h-9 w-full rounded-[5px] border border-[#dfe3da] text-[11px] font-semibold text-[#435143] hover:bg-[#f5f7f1]">Retry API connection</button>}
+            {authState === "error" && <button type="button" onClick={() => void refreshData()} className="mt-4 h-9 w-full rounded-[5px] border border-[#dfe3da] text-[11px] font-semibold text-[#435143] hover:bg-[#f5f7f1]">Try again</button>}
             <form onSubmit={submitLogin} className="mt-5 space-y-4"><Field label="Mobile number"><input name="mobile" required autoComplete="username" placeholder="+91 98765 43210" /></Field><Field label="Password"><input type="password" name="password" required autoComplete="current-password" placeholder="Enter your password" /></Field><button disabled={loading} className="mt-2 h-10 w-full rounded-[5px] bg-[#285c3b] text-[12px] font-semibold text-white transition hover:bg-[#1f4d31] disabled:cursor-wait disabled:opacity-60">{loading ? "Signing in..." : "Sign in"}</button></form>
           </>}
         </section>
-        <p className="mt-5 text-center text-[10px] text-[#92998e]">API endpoint · {API_URL}</p>
       </div>
     </div>;
   }

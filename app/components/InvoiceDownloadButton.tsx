@@ -27,12 +27,15 @@ export function InvoiceDownloadButton({ row }: { row: Row }) {
     onClick={() => void download()}
     disabled={state === "busy"}
     aria-busy={state === "busy"}
-    aria-label={`Download PDF for ${invoiceNumber}`}
+    aria-label={state === "error" ? `Could not create the PDF for ${invoiceNumber}. Activate to try again.` : `Download PDF for ${invoiceNumber}`}
     title={state === "error" ? "Could not create the PDF. Click to try again." : "Download PDF"}
     className={`grid h-8 w-8 place-items-center rounded-[5px] transition hover:bg-[#f1f5ee] disabled:cursor-wait disabled:opacity-60 ${state === "error" ? "text-[#a44c3a]" : "text-[#477e50]"}`}
   >
     {state === "busy"
       ? <span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#cfe0cb] border-t-[#285c3b]" />
       : <Icon name="download" size={15} />}
+    <span className="sr-only" role="status" aria-live="polite">
+      {state === "error" ? `Could not create the PDF for ${invoiceNumber}. Activate to try again.` : ""}
+    </span>
   </button>;
 }
