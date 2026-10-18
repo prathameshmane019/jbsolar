@@ -9,6 +9,7 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, ReactNode> = {
     grid: <><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></>,
     file: <><path d="M13 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V9z" /><path d="M13 3v6h6M8 14h8M8 17h8" /></>,
+    invoice: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" /><path d="M9 8h6M9 12h6M9 16h3" /></>,
     users: <><path d="M16 21v-1.7a3.3 3.3 0 0 0-3.3-3.3H6.3A3.3 3.3 0 0 0 3 19.3V21" /><circle cx="9.5" cy="7" r="3.5" /><path d="M17 11a3.5 3.5 0 0 0 0-7M21 21v-1.7a3.3 3.3 0 0 0-2.5-3.2" /></>,
     building: <><rect x="4" y="3" width="16" height="18" rx="1.5" /><path d="M9 21v-4h6v4M8 7h1m6 0h1M8 11h1m6 0h1" /></>,
     badge: <><circle cx="12" cy="8" r="5" /><path d="m8.5 12-1 9 4.5-2.5 4.5 2.5-1-9M10 8l1.3 1.3L14 6.8" /></>,
@@ -54,7 +55,7 @@ export function DataTable({ rows, columns, loading, caption = "Records", onToggl
       </tr> : rows.length === 0 ? <tr>
         <td colSpan={columnCount} className="px-6 py-12 text-center text-[12px] text-[#687266]">No records found.</td>
       </tr> : rows.map((row, index) => <tr key={String(row.id ?? index)} className="border-b border-[#f0f1ed] last:border-0 transition-colors hover:bg-[#fbfcf9]">{columns.map((column, cellIndex) => <td key={column.key} className={`whitespace-nowrap px-5 py-3.5 text-[11px] sm:px-6 ${cellIndex === 0 ? "font-semibold text-[#313a30]" : "text-[#687266]"}`}>{column.render ? column.render(row) : String(row[column.key] ?? "—")}</td>)}{hasActions && <td className="px-5 py-3.5"><div className="flex items-center gap-3">{onViewRecord &&
-        <button type="button" onClick={() => onViewRecord(row)} aria-label={`View ${String(row.fullName ?? row.name ?? row.policyNumber ?? row.label ?? "record")}`} className="rounded p-1 text-[#596959] hover:bg-[#edf2e9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]"><Icon name="eye" size={15} /></button>
+        <button type="button" onClick={() => onViewRecord(row)} aria-label={`View ${String(row.fullName ?? row.name ?? row.invoiceNumber ?? row.policyNumber ?? row.label ?? "record")}`} className="rounded p-1 text-[#596959] hover:bg-[#edf2e9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]"><Icon name="eye" size={15} /></button>
       }{onToggleStatus && <button type="button" onClick={() => onToggleStatus(row)} aria-label={`${row.status === "ACTIVE" ? "Deactivate" : "Activate"} ${String(row.name ?? row.fullName ?? "record")}`} className="text-[10px] font-semibold text-[#477e50] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]">{row.status === "ACTIVE" ? "Deactivate" : "Activate"}</button>
         }{onEditRecord &&
           <button type="button" onClick={() => onEditRecord(row)} aria-label={`Edit ${String(row.fullName ?? row.name ?? row.policyNumber ?? "record")}`} className="text-[10px] font-semibold text-[#477e50] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#477e50]">Edit</button>
@@ -125,6 +126,8 @@ const isInternalKey = (key: string) => HIDDEN_KEYS.has(key) || key.endsWith("Id"
 
 // Order and labels for the fields you want to show first.
 const LABELS: Record<string, string> = {
+  invoiceNumber: "Invoice number",
+  invoiceDate: "Invoice date",
   policyNumber: "Policy number",
   farmerName: "Farmer",
   farmerCode: "Farmer ID",
@@ -146,7 +149,7 @@ const LABELS: Record<string, string> = {
 const prettyKey = (key: string) =>
   LABELS[key] ?? key.replace(/([A-Z])/g, " $1").replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
 
-const DATE_KEYS = new Set(["startDate", "endDate"]);
+const DATE_KEYS = new Set(["startDate", "endDate", "invoiceDate"]);
 const DATETIME_KEYS = new Set(["createdAt", "updatedAt", "purchasedAt", "deletedAt"]);
 
 function formatValue(key: string, value: unknown): string {
@@ -184,7 +187,7 @@ export function RecordDetails({ record, loading }: { record: Row; loading: boole
   </div>;
 }
 
-export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
 
@@ -199,7 +202,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 
   return <dialog ref={dialogRef} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose(); }} className="fixed inset-0 m-0 h-dvh w-dvw max-h-none max-w-none bg-transparent p-4 backdrop:bg-[#152016]/40">
     <div className="grid min-h-full place-items-center" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="max-h-[90vh] w-full max-w-[470px] overflow-y-auto rounded-[9px] bg-white shadow-xl">
+      <section className={`max-h-[90vh] w-full ${wide ? "max-w-[640px]" : "max-w-[470px]"} overflow-y-auto rounded-[9px] bg-white shadow-xl`}>
         <div className="flex items-center justify-between border-b border-[#edf0e9] px-5 py-4"><h2 id={titleId} className="text-[15px] font-semibold">{title}</h2><button type="button" aria-label="Close dialog" onClick={onClose} className="rounded p-1.5 text-[#798174] hover:bg-[#f2f4ef]"><Icon name="close" size={17} /></button></div>
         <div className="p-5">{children}</div>
       </section>

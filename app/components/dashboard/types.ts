@@ -1,6 +1,7 @@
+import { InvoiceData } from "@/app/InvoicePDF";
 import type { FormEvent, ReactNode } from "react";
 
-export type Section = "Overview" | "Policies" | "Farmers" | "Vendors" | "Agents" | "Plans" | "Recycle Bin";
+export type Section = "Overview" | "Policies" | "Farmers" | "Vendors" | "Agents" | "Plans" | "Invoices" | "Recycle Bin";
 export type ListSection = Exclude<Section, "Overview" | "Recycle Bin">;
 export type DirectorySection = Exclude<Section, "Overview">;
 export type Status = "ACTIVE" | "INACTIVE" | "PENDING" | "EXPIRED" | "CANCELLED";
@@ -40,7 +41,7 @@ export type Agent = Row & { id: string; fullName: string; mobile: string; vendor
 export type Plan = Row & { id: string; name: string; durationMonths: number; price: number; gstPercentage: number; status: Status };
 export type Policy = Row & { id: string; policyNumber: string; farmerName: string; planName: string; startDate: string; endDate: string; totalAmount: number; status: Status };
 export type RecycleBinEntry = { resource: string; id: string; label: string; deletedAt: string };
-export type ResourceData = { policies: Policy[]; farmers: Farmer[]; vendors: Vendor[]; agents: Agent[]; plans: Plan[]; recycleBin: RecycleBinEntry[] };
+export type ResourceData = { policies: Policy[]; farmers: Farmer[]; vendors: Vendor[]; agents: Agent[]; plans: Plan[]; recycleBin: RecycleBinEntry[];invoices: InvoiceData[] };
 export type ReferenceData = Pick<ResourceData, "farmers" | "vendors" | "plans" | "agents">;
 export type AuthState = "signedOut" | "loading" | "authenticated" | "error";
 export type TableColumn = { key: string; label: string; render?: (row: Row) => ReactNode };
@@ -51,7 +52,7 @@ export type RecordSelection = { section: Section; row: Row };
 export type IconName =
   | "grid" | "file" | "users" | "building" | "badge" | "layers" | "search"
   | "plus" | "arrow" | "download" | "bell" | "close" | "chevron" | "sun"
-  | "refresh" | "eye" | "trash";
+  | "refresh" | "eye" | "trash"| "invoice";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 export const PAGE_SIZE_OPTIONS = [10, 25, 50];
@@ -61,15 +62,17 @@ export const initialDirectoryQueries: Record<ListSection, DirectoryQuery> = {
   Vendors: { page: 0, size: 10, sort: "name", direction: "ASC", search: "", status: "", createdFrom: "", createdTo: "", vendorId: "" },
   Agents: { page: 0, size: 10, sort: "fullName", direction: "ASC", search: "", status: "", createdFrom: "", createdTo: "", vendorId: "" },
   Plans: { page: 0, size: 10, sort: "name", direction: "ASC", search: "", status: "", createdFrom: "", createdTo: "", vendorId: "" },
+  Invoices: { page: 0, size: 10, sort: "invoiceNumber", direction: "DESC", search: "", status: "", createdFrom: "", createdTo: "", vendorId: "" },
 };
 export const initialRecycleBinQuery: DirectoryQuery = {
   page: 0, size: 10, sort: "deletedAt", direction: "DESC", search: "", status: "", createdFrom: "", createdTo: "", vendorId: "",
 };
-export const emptyData: ResourceData = { policies: [], farmers: [], vendors: [], agents: [], plans: [], recycleBin: [] };
+export const emptyData: ResourceData = { policies: [], farmers: [], vendors: [], agents: [], plans: [], recycleBin: [], invoices: [] };
 
 export const navigation: { label: Section; icon: IconName }[] = [
   { label: "Overview", icon: "grid" },
   { label: "Policies", icon: "file" },
+  { label: "Invoices", icon: "invoice" },
   { label: "Farmers", icon: "users" },
   { label: "Vendors", icon: "building" },
   { label: "Agents", icon: "badge" },
@@ -83,6 +86,7 @@ export const endpointBySection: Partial<Record<Section, keyof ResourceData>> = {
   Vendors: "vendors",
   Agents: "agents",
   Plans: "plans",
+  Invoices: "invoices",
 };
 
 export const apiResourceBySection: Partial<Record<Section, string>> = {
@@ -91,6 +95,7 @@ export const apiResourceBySection: Partial<Record<Section, string>> = {
   Vendors: "vendors",
   Agents: "agents",
   Plans: "policy-plans",
+  Invoices: "invoices",
 };
 
 export const dataKeyByApiResource: Record<string, Exclude<keyof ResourceData, "recycleBin">> = {
@@ -116,6 +121,7 @@ export const sectionDescriptions: Record<Section, string> = {
   Agents: "Manage the people growing your field network.",
   Plans: "Configure the protection products you offer.",
   "Recycle Bin": "Restore deleted records or permanently remove them.",
+  Invoices: "View and manage all invoices related to policies.",
 };
 
 export function formatCurrency(value: number) {
@@ -135,6 +141,7 @@ export function recordLabel(section: Section) {
     Vendors: "Vendor",
     Agents: "Agent",
     Plans: "Plan",
+    Invoices: "Invoice",
     "Recycle Bin": "Deleted record",
   };
   return labels[section] ?? section;

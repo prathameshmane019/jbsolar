@@ -1,6 +1,5 @@
 "use client";
-
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { DashboardShell } from "./dashboard-shell";
 import { DirectoryPage } from "./directory-page";
 import { OverviewPage } from "./overview-page";
@@ -32,6 +31,8 @@ import {
   type Section,
   recordLabel,
 } from "./types";
+import { InvoiceDialog } from "../InvoiceDialog";
+import { downloadInvoicePdf, type InvoiceData } from "@/app/InvoicePDF";
 
 async function fetchPage<T extends Row>(
   path: string,
@@ -63,7 +64,7 @@ export default function DashboardClient() {
   const directoryQueriesRef = useRef(directoryQueries);
   const [directoryRows, setDirectoryRows] = useState<Partial<Record<ListSection, Row[]>>>({});
   const [pageMetadata, setPageMetadata] = useState<Partial<Record<ListSection, PageMetadata>>>({});
-  const [formOptions, setFormOptions] = useState<ReferenceData>({ farmers: [], vendors: [], plans: [],agents: [] });
+  const [formOptions, setFormOptions] = useState<ReferenceData>({ farmers: [], vendors: [], plans: [], agents: [] });
   const [vendorOptions, setVendorOptions] = useState<Row[]>([]);
   const directoryRequestIds = useRef<Partial<Record<ListSection, number>>>({});
   const [authState, setAuthState] = useState<AuthState>("signedOut");
@@ -80,6 +81,7 @@ export default function DashboardClient() {
   const [recordToPurge, setRecordToPurge] = useState<RecordSelection | null>(null);
   const [toast, setToast] = useState("");
   const editSavingRef = useRef(false);
+  const [invoiceToView, setInvoiceToView] = useState<Row | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -99,8 +101,7 @@ export default function DashboardClient() {
     if (!preserveWorkspace) setAuthState("loading");
     setAuthMessage("");
     try {
-      const [policies, farmers, vendors, agents, plans, recycleBin, allVendorOptions, allFarmerOptions, allPlanOptions,allAgentOptions] = await Promise.all([
-        
+      const [policies, farmers, vendors, agents, plans, recycleBin, allVendorOptions, allFarmerOptions, allPlanOptions, allAgentOptions, invoices] = await Promise.all([
         fetchPage<ResourceData["policies"][number]>("/api/v1/policies", token, directoryQueriesRef.current.Policies),
         fetchPage<ResourceData["farmers"][number]>("/api/v1/farmers", token, directoryQueriesRef.current.Farmers),
         fetchPage<ResourceData["vendors"][number]>("/api/v1/vendors", token, directoryQueriesRef.current.Vendors),
@@ -111,6 +112,7 @@ export default function DashboardClient() {
         fetchPage<ResourceData["farmers"][number]>("/api/v1/farmers", token, { ...directoryQueriesRef.current.Farmers, size: 100 }),
         fetchPage<ResourceData["plans"][number]>("/api/v1/policy-plans", token, { ...directoryQueriesRef.current.Plans, size: 100 }, "&activeOnly=false"),
         fetchPage<ResourceData["agents"][number]>("/api/v1/agents", token, { ...directoryQueriesRef.current.Agents, size: 100 }),
+        fetchPage<ResourceData["invoices"][number]>("/api/v1/invoices", token, directoryQueriesRef.current.Invoices),
       ]);
       setData({
         policies: policies.content,
@@ -118,6 +120,7 @@ export default function DashboardClient() {
         vendors: vendors.content,
         agents: agents.content,
         plans: plans.content,
+        invoices: invoices.content,
         recycleBin,
       });
       setDirectoryRows({
@@ -126,6 +129,7 @@ export default function DashboardClient() {
         Vendors: vendors.content,
         Agents: agents.content,
         Plans: plans.content,
+        Invoices: invoices.content,
       });
       setPageMetadata({
         Policies: pageInfo(policies),
@@ -133,13 +137,14 @@ export default function DashboardClient() {
         Vendors: pageInfo(vendors),
         Agents: pageInfo(agents),
         Plans: pageInfo(plans),
+        Invoices: pageInfo(invoices),
       });
       setVendorOptions(allVendorOptions.content);
       setFormOptions({
         farmers: allFarmerOptions.content,
         vendors: allVendorOptions.content,
         plans: allPlanOptions.content,
-         agents: allAgentOptions.content,
+        agents: allAgentOptions.content,
       });
       setAuthState("authenticated");
       setToast("Data synced");
@@ -259,7 +264,7 @@ export default function DashboardClient() {
 
   async function submitCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (section === "Overview" || section === "Recycle Bin") return;
+    if (section === "Overview" || section === "Recycle Bin" || section === "Invoices") return;
     const form = new FormData(event.currentTarget);
     const payload: Record<string, string | number | null> = {};
     form.forEach((value, key) => { if (String(value).trim()) payload[key] = String(value); });
@@ -386,7 +391,7 @@ export default function DashboardClient() {
   async function confirmDelete() {
     if (!recordToDelete) return;
     const deleteSection = recordToDelete.section;
-    if (deleteSection === "Overview" || deleteSection === "Recycle Bin") {
+    if (deleteSection === "Overview" || deleteSection === "Recycle Bin" || deleteSection === "Invoices") {
       setToast("This record cannot be deleted from the current section.");
       return;
     }
@@ -514,13 +519,22 @@ export default function DashboardClient() {
     }
   }
 
+  async function downloadInvoice(row: Row) {
+    try {
+      await downloadInvoicePdf(row as unknown as InvoiceData);
+      setToast("Invoice downloaded");
+    } catch {
+      setToast("Could not generate the invoice PDF.");
+    }
+  }
+
   function openSection(nextSection: Section) {
     setSection(nextSection);
   }
 
   function openCreate() {
     if (section === "Overview") setSection("Policies");
-    if (section === "Recycle Bin") return;
+    if (section === "Recycle Bin" || section === "Invoices") return;
     setEditingRecord(null);
     setModal("create");
   }
@@ -537,6 +551,7 @@ export default function DashboardClient() {
     setSelectedRecord(null);
     setRecordToDelete(null);
     setRecordToPurge(null);
+    setInvoiceToView(null);
     setAuthState("signedOut");
     setSection("Overview");
   }
@@ -575,17 +590,17 @@ export default function DashboardClient() {
         : <DirectoryPage
             key={section}
             section={section}
-            rows={section === "Recycle Bin" ? data.recycleBin : directoryRows[section] ?? getRows(data, section)}
+            rows={section === "Recycle Bin" ? data.recycleBin : directoryRows[section] ?? getRows(data, section) ?? []}
             loading={loading}
             query={directoryQueries[section]}
             pageMetadata={section === "Recycle Bin" ? undefined : pageMetadata[section]}
             vendorOptions={vendorOptions}
             onQueryChange={query => updateDirectoryQuery(section, query)}
-            onExport={section === "Recycle Bin" ? undefined : query => void exportData(section, query)}
+            onExport={section === "Recycle Bin" || section === "Invoices" ? undefined : query => void exportData(section, query)}
             onToggleStatus={section === "Vendors" || section === "Plans" ? row => void toggleStatus(row, section) : undefined}
-            onEditRecord={section !== "Recycle Bin" ? row => { setEditingRecord({ section, row }); setModal("edit"); } : undefined}
-            onViewRecord={section !== "Recycle Bin" ? row => void viewRecord(row, section) : undefined}
-            onDeleteRecord={section !== "Recycle Bin" ? row => setRecordToDelete({ section, row }) : undefined}
+            onEditRecord={section !== "Recycle Bin" && section !== "Invoices" ? row => { setEditingRecord({ section, row }); setModal("edit"); } : undefined}
+            onViewRecord={section === "Invoices" ? row => setInvoiceToView(row) : section !== "Recycle Bin" ? row => void viewRecord(row, section) : undefined}
+            onDeleteRecord={section !== "Recycle Bin" && section !== "Invoices" ? row => setRecordToDelete({ section, row }) : undefined}
             onRestoreRecord={section === "Recycle Bin" ? row => void restoreRecord(row) : undefined}
             onPurgeRecord={section === "Recycle Bin" ? row => setRecordToPurge({ section, row }) : undefined}
           />}
@@ -602,6 +617,7 @@ export default function DashboardClient() {
       onSubmit={submitEdit}
       onClose={() => { if (!editSaving) { setModal(null); setEditingRecord(null); } }}
     />}
+    {invoiceToView && <InvoiceDialog row={invoiceToView} onClose={() => setInvoiceToView(null)} onDownload={downloadInvoice} />}
     {selectedRecord && <RecordDetailsDialog record={selectedRecord} loading={recordLoading} onClose={closeRecordDetails} />}
     {recordToDelete && <RecordDeleteDialog record={recordToDelete} deleting={deleteLoading} onDelete={() => void confirmDelete()} onClose={() => { if (!deleteLoading) setRecordToDelete(null); }} />}
     {recordToPurge && <RecycleBinPurgeDialog record={recordToPurge} deleting={deleteLoading} onDelete={() => void confirmPurge()} onClose={() => { if (!deleteLoading) setRecordToPurge(null); }} />}

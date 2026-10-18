@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DataTable, Icon, Pagination, StatusPill } from "./ui";
 import { formatCurrency, type DirectoryQuery, type DirectorySection, type PageMetadata, type RecordAction, type Row, type Section } from "./types";
+import { InvoiceDownloadButton } from "../InvoiceDownloadButton";
 
 export function DirectoryPage({
   section,
@@ -157,6 +158,12 @@ export function columnsFor(section: Section) {
     { key: "resource", label: "RESOURCE" },
     { key: "deletedAt", label: "DELETED", render: (row: Row) => row.deletedAt ? new Date(String(row.deletedAt)).toLocaleString("en-IN") : "—" },
   ];
+  if (section === "Invoices") return [
+  { key: "invoiceNumber", label: "INVOICE" }, { key: "policyNumber", label: "POLICY" }, { key: "farmerName", label: "FARMER" },
+  { key: "invoiceDate", label: "DATE", render: (row: Row) => new Date(String(row.invoiceDate)).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) },
+  { key: "totalAmount", label: "TOTAL", render: (row: Row) => formatCurrency(Number(row.totalAmount)) },
+  { key: "pdf", label: "PDF", render: (row: Row) => <InvoiceDownloadButton row={row} /> },
+];
   if (section === "Policies") return [
     { key: "policyNumber", label: "POLICY" }, { key: "farmerName", label: "FARMER" }, { key: "planName", label: "PLAN" },
     { key: "startDate", label: "START DATE", render: (row: Row) => new Date(String(row.startDate)).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) },
