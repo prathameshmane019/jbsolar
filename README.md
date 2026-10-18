@@ -20,6 +20,14 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Dashboard data
+
+The dashboard caches recently loaded workspace data in tab-scoped `sessionStorage` for up to five minutes. Cached data is shown on reload; data older than five minutes is revalidated on startup. Use the refresh button to sync the current section immediately. Signing out clears the cached workspace. Browser session storage is not encrypted, so sign out when using a shared device.
+
+Invoices are loaded only when the Invoices section is opened. Opening an invoice fetches its full detail once per tab session and reuses the cached response; invoice PDFs are generated on the client.
+
+Policy documents are fetched only after selecting **Load documents** in a policy's details. Their signed view links are kept in memory, and **Refresh documents** requests new links when needed.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

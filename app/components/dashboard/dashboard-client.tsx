@@ -7,6 +7,15 @@ import { CreateForm, type EditableSection } from "./record-forms";
 import { RecordDeleteDialog, RecordDetailsDialog, RecordEditDialog, RecycleBinPurgeDialog } from "./record-dialogs";
 import { Field, Icon, Modal } from "./ui";
 import { apiDownload, apiRequest, ApiError, normalizePageResponse, serializeDirectoryQuery } from "./api";
+import { InvoiceDialog } from "../InvoiceDialog";
+import { downloadInvoicePdf, type InvoiceData } from "@/app/InvoicePDF";
+import {
+  clearWorkspaceCache,
+  readWorkspaceCache,
+  WORKSPACE_CACHE_TTL_MS,
+  writeWorkspaceCache,
+  type WorkspaceCache,
+} from "./workspace-cache";
 import {
   API_URL,
   apiResourceBySection,
@@ -24,6 +33,7 @@ import {
   type NormalizedPageResponse,
   type PageMetadata,
   type PageResponse,
+  type PolicyFileMetadata,
   type ReferenceData,
   type ResourceData,
   type Row,
@@ -31,8 +41,6 @@ import {
   type Section,
   recordLabel,
 } from "./types";
-import { InvoiceDialog } from "../InvoiceDialog";
-import { downloadInvoicePdf, type InvoiceData } from "@/app/InvoicePDF";
 
 async function fetchPage<T extends Row>(
   path: string,
@@ -45,6 +53,21 @@ async function fetchPage<T extends Row>(
   return normalizePageResponse(response, query.page, query.size);
 }
 
+function isPolicyFileMetadata(value: unknown): value is PolicyFileMetadata {
+  if (!value || typeof value !== "object") return false;
+  const file = value as Record<string, unknown>;
+  return typeof file.id === "string"
+    && typeof file.resourceType === "string"
+    && typeof file.resourceId === "string"
+    && typeof file.purpose === "string"
+    && typeof file.originalFilename === "string"
+    && typeof file.contentType === "string"
+    && typeof file.fileSize === "number"
+    && typeof file.uploadedAt === "string"
+    && typeof file.viewUrl === "string"
+    && typeof file.viewUrlExpiresAt === "string";
+}
+
 function pageInfo<T extends Row>(page: NormalizedPageResponse<T>): PageMetadata {
   return {
     page: page.page,
@@ -52,6 +75,10 @@ function pageInfo<T extends Row>(page: NormalizedPageResponse<T>): PageMetadata 
     totalElements: page.totalElements,
     totalPages: page.totalPages,
   };
+}
+
+function directoryQueryKey(query: DirectoryQuery, section: ListSection): string {
+  return `${serializeDirectoryQuery(query)}${section === "Plans" ? "&activeOnly=false" : ""}`;
 }
 
 export default function DashboardClient() {
@@ -65,8 +92,16 @@ export default function DashboardClient() {
   const [directoryRows, setDirectoryRows] = useState<Partial<Record<ListSection, Row[]>>>({});
   const [pageMetadata, setPageMetadata] = useState<Partial<Record<ListSection, PageMetadata>>>({});
   const [formOptions, setFormOptions] = useState<ReferenceData>({ farmers: [], vendors: [], plans: [], agents: [] });
-  const [vendorOptions, setVendorOptions] = useState<Row[]>([]);
+  const formOptionsLoadedRef = useRef(false);
+  const [vendorOptions, setVendorOptions] = useState<ResourceData["vendors"]>([]);
+  const vendorOptionsDataRef = useRef<ResourceData["vendors"]>([]);
+  const vendorOptionsLoadedRef = useRef(false);
+  const vendorOptionsRequestRef = useRef<Promise<ResourceData["vendors"]> | null>(null);
   const directoryRequestIds = useRef<Partial<Record<ListSection, number>>>({});
+  const loadedDirectoryQueriesRef = useRef<Partial<Record<ListSection, string>>>({});
+  const recycleBinLoadedRef = useRef(false);
+  const lastSyncedAtRef = useRef(0);
+  const workspaceRequestIdRef = useRef(0);
   const [authState, setAuthState] = useState<AuthState>("signedOut");
   const [authMessage, setAuthMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -76,18 +111,92 @@ export default function DashboardClient() {
   const [selectedRecord, setSelectedRecord] = useState<RecordSelection | null>(null);
   const [recordLoading, setRecordLoading] = useState(false);
   const recordRequestId = useRef(0);
+  const [policyFiles, setPolicyFiles] = useState<{ policyId: string; items: PolicyFileMetadata[] } | null>(null);
+  const [policyFilesLoading, setPolicyFilesLoading] = useState(false);
+  const [policyFilesError, setPolicyFilesError] = useState("");
+  const policyFilesRequestIdRef = useRef(0);
   const [recordToDelete, setRecordToDelete] = useState<RecordSelection | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [recordToPurge, setRecordToPurge] = useState<RecordSelection | null>(null);
   const [toast, setToast] = useState("");
   const editSavingRef = useRef(false);
+  const [invoiceDetails, setInvoiceDetails] = useState<Record<string, ResourceData["invoices"][number]>>({});
   const [invoiceToView, setInvoiceToView] = useState<Row | null>(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const invoiceRequestIdRef = useRef(0);
+
+  const signOut = useCallback(() => {
+    workspaceRequestIdRef.current += 1;
+    recordRequestId.current += 1;
+    policyFilesRequestIdRef.current += 1;
+    for (const listSection of Object.keys(directoryRequestIds.current) as ListSection[]) {
+      directoryRequestIds.current[listSection] = (directoryRequestIds.current[listSection] ?? 0) + 1;
+    }
+    editSavingRef.current = false;
+    setEditSaving(false);
+    window.localStorage.removeItem("jbsolar_access_token");
+    clearWorkspaceCache();
+    setData(emptyData);
+    setDirectoryRows({});
+    setPageMetadata({});
+    setFormOptions({ farmers: [], vendors: [], plans: [], agents: [] });
+    setVendorOptions([]);
+    vendorOptionsDataRef.current = [];
+    loadedDirectoryQueriesRef.current = {};
+    recycleBinLoadedRef.current = false;
+    formOptionsLoadedRef.current = false;
+    vendorOptionsLoadedRef.current = false;
+    vendorOptionsRequestRef.current = null;
+    lastSyncedAtRef.current = 0;
+    const freshQueries = {
+      ...initialDirectoryQueries,
+      "Recycle Bin": initialRecycleBinQuery,
+    };
+    directoryQueriesRef.current = freshQueries;
+    setDirectoryQueries(freshQueries);
+    setAuthMessage("");
+    setModal(null);
+    setEditingRecord(null);
+    setSelectedRecord(null);
+    setPolicyFiles(null);
+    setPolicyFilesLoading(false);
+    setPolicyFilesError("");
+    setRecordToDelete(null);
+    setRecordToPurge(null);
+    setInvoiceToView(null);
+    setInvoiceDetails({});
+    setInvoiceLoading(false);
+    invoiceRequestIdRef.current += 1;
+    setAuthState("signedOut");
+    setSection("Overview");
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 3600);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (authState !== "authenticated" || !lastSyncedAtRef.current) return;
+    const snapshot: WorkspaceCache = {
+      version: 3,
+      apiBaseUrl: API_URL,
+      savedAt: lastSyncedAtRef.current,
+      data,
+      invoiceDetails,
+      directoryRows,
+      pageMetadata,
+      loadedDirectoryQueries: loadedDirectoryQueriesRef.current,
+      directoryQueries,
+      formOptions,
+      formOptionsLoaded: formOptionsLoadedRef.current,
+      vendorOptions,
+      vendorOptionsLoaded: vendorOptionsLoadedRef.current,
+      recycleBinLoaded: recycleBinLoadedRef.current,
+    };
+    writeWorkspaceCache(snapshot);
+  }, [authState, data, invoiceDetails, directoryRows, pageMetadata, directoryQueries, formOptions, vendorOptions]);
 
   const refreshData = useCallback(async (
     token = window.localStorage.getItem("jbsolar_access_token") ?? "",
@@ -97,63 +206,56 @@ export default function DashboardClient() {
       setAuthState("signedOut");
       return;
     }
+    const requestId = workspaceRequestIdRef.current;
     setLoading(true);
     if (!preserveWorkspace) setAuthState("loading");
     setAuthMessage("");
     try {
-      const [policies, farmers, vendors, agents, plans, recycleBin, allVendorOptions, allFarmerOptions, allPlanOptions, allAgentOptions, invoices] = await Promise.all([
+      const [policies, farmers, vendors, recycleBin] = await Promise.all([
         fetchPage<ResourceData["policies"][number]>("/api/v1/policies", token, directoryQueriesRef.current.Policies),
         fetchPage<ResourceData["farmers"][number]>("/api/v1/farmers", token, directoryQueriesRef.current.Farmers),
         fetchPage<ResourceData["vendors"][number]>("/api/v1/vendors", token, directoryQueriesRef.current.Vendors),
-        fetchPage<ResourceData["agents"][number]>("/api/v1/agents", token, directoryQueriesRef.current.Agents),
-        fetchPage<ResourceData["plans"][number]>("/api/v1/policy-plans", token, directoryQueriesRef.current.Plans, "&activeOnly=false"),
         apiRequest<ResourceData["recycleBin"]>("/api/v1/recycle-bin", token),
-        fetchPage<ResourceData["vendors"][number]>("/api/v1/vendors", token, { ...directoryQueriesRef.current.Vendors, size: 100 }),
-        fetchPage<ResourceData["farmers"][number]>("/api/v1/farmers", token, { ...directoryQueriesRef.current.Farmers, size: 100 }),
-        fetchPage<ResourceData["plans"][number]>("/api/v1/policy-plans", token, { ...directoryQueriesRef.current.Plans, size: 100 }, "&activeOnly=false"),
-        fetchPage<ResourceData["agents"][number]>("/api/v1/agents", token, { ...directoryQueriesRef.current.Agents, size: 100 }),
-        fetchPage<ResourceData["invoices"][number]>("/api/v1/invoices", token, directoryQueriesRef.current.Invoices),
       ]);
-      setData({
+      if (requestId !== workspaceRequestIdRef.current) return;
+      setData(current => ({
+        ...current,
         policies: policies.content,
         farmers: farmers.content,
         vendors: vendors.content,
-        agents: agents.content,
-        plans: plans.content,
-        invoices: invoices.content,
         recycleBin,
-      });
-      setDirectoryRows({
+      }));
+      setDirectoryRows(current => ({
+        ...current,
         Policies: policies.content,
         Farmers: farmers.content,
         Vendors: vendors.content,
-        Agents: agents.content,
-        Plans: plans.content,
-        Invoices: invoices.content,
-      });
-      setPageMetadata({
+      }));
+      setPageMetadata(current => ({
+        ...current,
         Policies: pageInfo(policies),
         Farmers: pageInfo(farmers),
         Vendors: pageInfo(vendors),
-        Agents: pageInfo(agents),
-        Plans: pageInfo(plans),
-        Invoices: pageInfo(invoices),
-      });
-      setVendorOptions(allVendorOptions.content);
-      setFormOptions({
-        farmers: allFarmerOptions.content,
-        vendors: allVendorOptions.content,
-        plans: allPlanOptions.content,
-        agents: allAgentOptions.content,
-      });
+      }));
+      setVendorOptions(vendors.content);
+      vendorOptionsDataRef.current = vendors.content;
+      setFormOptions(current => ({ ...current, vendors: vendors.content }));
+      vendorOptionsLoadedRef.current = vendors.totalElements <= vendors.content.length;
+      recycleBinLoadedRef.current = true;
+      loadedDirectoryQueriesRef.current = {
+        ...loadedDirectoryQueriesRef.current,
+        Policies: directoryQueryKey(directoryQueriesRef.current.Policies, "Policies"),
+        Farmers: directoryQueryKey(directoryQueriesRef.current.Farmers, "Farmers"),
+        Vendors: directoryQueryKey(directoryQueriesRef.current.Vendors, "Vendors"),
+      };
+      lastSyncedAtRef.current = Date.now();
       setAuthState("authenticated");
       setToast("Data synced");
     } catch (error) {
+      if (requestId !== workspaceRequestIdRef.current) return;
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-        window.localStorage.removeItem("jbsolar_access_token");
-        setData(emptyData);
+        signOut();
         setAuthMessage("Your session has expired. Please sign in again.");
-        setAuthState("signedOut");
       } else if (preserveWorkspace) {
         setToast("Could not refresh data. Your current workspace is still available.");
       } else {
@@ -163,23 +265,120 @@ export default function DashboardClient() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [signOut]);
 
   useEffect(() => {
-    const token = window.localStorage.getItem("jbsolar_access_token");
-    if (!token) return;
-    const timer = window.setTimeout(() => void refreshData(token), 0);
+    const timer = window.setTimeout(() => {
+      const token = window.localStorage.getItem("jbsolar_access_token");
+      if (!token) return;
+      const cached = readWorkspaceCache(API_URL);
+      if (cached) {
+        setData(cached.data);
+        setDirectoryRows(cached.directoryRows);
+        setPageMetadata(cached.pageMetadata);
+          setInvoiceDetails(cached.invoiceDetails);
+        setFormOptions(cached.formOptions);
+        setVendorOptions(cached.vendorOptions);
+        vendorOptionsDataRef.current = cached.vendorOptions;
+        directoryQueriesRef.current = cached.directoryQueries;
+        setDirectoryQueries(cached.directoryQueries);
+        loadedDirectoryQueriesRef.current = cached.loadedDirectoryQueries;
+        formOptionsLoadedRef.current = cached.formOptionsLoaded;
+        vendorOptionsLoadedRef.current = cached.vendorOptionsLoaded;
+        recycleBinLoadedRef.current = cached.recycleBinLoaded;
+        lastSyncedAtRef.current = cached.savedAt;
+        setAuthState("authenticated");
+        if (Date.now() - cached.savedAt < WORKSPACE_CACHE_TTL_MS) return;
+      }
+      void refreshData(token, Boolean(cached));
+    }, 0);
     return () => window.clearTimeout(timer);
   }, [refreshData]);
 
-  function handleRequestError(error: unknown, message: string) {
+  const handleRequestError = useCallback((error: unknown, message: string) => {
     if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      clearWorkspaceCache();
       signOut();
       setAuthMessage("Your session has expired. Please sign in again.");
       return;
     }
     setToast(message);
+  }, [signOut]);
+
+  const ensureVendorOptions = useCallback(async (): Promise<ResourceData["vendors"]> => {
+    if (vendorOptionsLoadedRef.current) return vendorOptionsDataRef.current;
+    if (vendorOptionsRequestRef.current) return vendorOptionsRequestRef.current;
+    const token = window.localStorage.getItem("jbsolar_access_token");
+    if (!token) {
+      setAuthState("signedOut");
+      return [];
+    }
+    const requestId = workspaceRequestIdRef.current;
+    const request = (async () => {
+      try {
+        const vendors = await fetchPage<ResourceData["vendors"][number]>(
+          "/api/v1/vendors",
+          token,
+          { ...initialDirectoryQueries.Vendors, size: 100 },
+        );
+        if (requestId !== workspaceRequestIdRef.current) return [];
+        vendorOptionsDataRef.current = vendors.content;
+        setVendorOptions(vendors.content);
+        setFormOptions(current => ({ ...current, vendors: vendors.content }));
+        vendorOptionsLoadedRef.current = true;
+        lastSyncedAtRef.current = Date.now();
+        return vendors.content;
+      } catch (error) {
+        if (requestId !== workspaceRequestIdRef.current) return [];
+        handleRequestError(error, "Could not load vendor filter options.");
+        return [];
+      } finally {
+        if (requestId === workspaceRequestIdRef.current) vendorOptionsRequestRef.current = null;
+      }
+    })();
+    vendorOptionsRequestRef.current = request;
+    return request;
+  }, [handleRequestError]);
+
+  async function ensureFormOptions(target: Section): Promise<boolean> {
+    const requestId = workspaceRequestIdRef.current;
+    const vendors = await ensureVendorOptions();
+    if (requestId !== workspaceRequestIdRef.current) return false;
+    if (!vendorOptionsLoadedRef.current) return false;
+    if (target === "Agents" || formOptionsLoadedRef.current) return true;
+    if (target !== "Policies") return true;
+
+    const token = window.localStorage.getItem("jbsolar_access_token");
+    if (!token) {
+      setAuthState("signedOut");
+      return false;
+    }
+    setLoading(true);
+    try {
+      const [farmers, plans, agents] = await Promise.all([
+        fetchPage<ResourceData["farmers"][number]>("/api/v1/farmers", token, { ...initialDirectoryQueries.Farmers, size: 100 }),
+        fetchPage<ResourceData["plans"][number]>("/api/v1/policy-plans", token, { ...initialDirectoryQueries.Plans, size: 100 }, "&activeOnly=false"),
+        fetchPage<ResourceData["agents"][number]>("/api/v1/agents", token, { ...initialDirectoryQueries.Agents, size: 100 }),
+      ]);
+      if (requestId !== workspaceRequestIdRef.current) return false;
+      setFormOptions({ farmers: farmers.content, vendors, plans: plans.content, agents: agents.content });
+      formOptionsLoadedRef.current = true;
+      lastSyncedAtRef.current = Date.now();
+      return true;
+    } catch (error) {
+      if (requestId !== workspaceRequestIdRef.current) return false;
+      handleRequestError(error, "Could not load the form options. Please try again.");
+      return false;
+    } finally {
+      setLoading(false);
+    }
   }
+
+  useEffect(() => {
+    if (authState !== "authenticated" || (section !== "Policies" && section !== "Agents")) return;
+    const timer = window.setTimeout(() => void ensureVendorOptions(), 0);
+    return () => window.clearTimeout(timer);
+  }, [authState, ensureVendorOptions, section]);
 
   const updateDirectoryQuery = useCallback((target: DirectorySection, query: DirectoryQuery) => {
     const updated = { ...directoryQueriesRef.current, [target]: query };
@@ -187,10 +386,12 @@ export default function DashboardClient() {
     setDirectoryQueries(updated);
   }, []);
 
-  const loadDirectoryPage = useCallback(async (target: ListSection, query: DirectoryQuery): Promise<boolean> => {
+  const loadDirectoryPage = useCallback(async (target: ListSection, query: DirectoryQuery, force = false): Promise<boolean> => {
     const token = window.localStorage.getItem("jbsolar_access_token");
     const resourcePath = apiResourceBySection[target];
     if (!token || !resourcePath) return false;
+    const queryKey = directoryQueryKey(query, target);
+    if (!force && loadedDirectoryQueriesRef.current[target] === queryKey) return true;
     const requestId = (directoryRequestIds.current[target] ?? 0) + 1;
     directoryRequestIds.current[target] = requestId;
     setLoading(true);
@@ -216,14 +417,14 @@ export default function DashboardClient() {
       setPageMetadata(current => ({ ...current, [target]: pageInfo(page) }));
       const dataKey = endpointBySection[target];
       if (dataKey) setData(current => ({ ...current, [dataKey]: page.content }));
+      loadedDirectoryQueriesRef.current[target] = queryKey;
+      lastSyncedAtRef.current = Date.now();
       return true;
     } catch (error) {
       if (directoryRequestIds.current[target] !== requestId) return false;
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-        window.localStorage.removeItem("jbsolar_access_token");
-        setData(emptyData);
+        signOut();
         setAuthMessage("Your session has expired. Please sign in again.");
-        setAuthState("signedOut");
       } else {
         setToast(`Could not load ${target.toLowerCase()}.`);
       }
@@ -231,13 +432,44 @@ export default function DashboardClient() {
     } finally {
       if (directoryRequestIds.current[target] === requestId) setLoading(false);
     }
-  }, []);
+  }, [signOut]);
 
   useEffect(() => {
     if (authState !== "authenticated" || section === "Overview" || section === "Recycle Bin") return;
     const timer = window.setTimeout(() => void loadDirectoryPage(section, directoryQueries[section]), 0);
     return () => window.clearTimeout(timer);
   }, [authState, directoryQueries, loadDirectoryPage, section]);
+
+  const loadRecycleBin = useCallback(async (force = false): Promise<boolean> => {
+    if (!force && recycleBinLoadedRef.current) return true;
+    const token = window.localStorage.getItem("jbsolar_access_token");
+    if (!token) {
+      setAuthState("signedOut");
+      return false;
+    }
+    const requestId = workspaceRequestIdRef.current;
+    setLoading(true);
+    try {
+      const recycleBin = await apiRequest<ResourceData["recycleBin"]>("/api/v1/recycle-bin", token);
+      if (requestId !== workspaceRequestIdRef.current) return false;
+      setData(current => ({ ...current, recycleBin }));
+      recycleBinLoadedRef.current = true;
+      lastSyncedAtRef.current = Date.now();
+      return true;
+    } catch (error) {
+      if (requestId !== workspaceRequestIdRef.current) return false;
+      handleRequestError(error, "Could not load the recycle bin.");
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [handleRequestError]);
+
+  useEffect(() => {
+    if (authState !== "authenticated" || section !== "Recycle Bin") return;
+    const timer = window.setTimeout(() => void loadRecycleBin(), 0);
+    return () => window.clearTimeout(timer);
+  }, [authState, loadRecycleBin, section]);
 
   async function submitLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -286,7 +518,9 @@ export default function DashboardClient() {
     try {
       const created = await apiRequest<Row>(`/api/v1/${resourcePath}`, token, { method: "POST", body: JSON.stringify(payload) });
       setData(current => ({ ...current, [endpoint]: [created, ...current[endpoint]] }));
-      void loadDirectoryPage(section, directoryQueriesRef.current[section]);
+      formOptionsLoadedRef.current = false;
+      if (section === "Vendors") vendorOptionsLoadedRef.current = false;
+      void loadDirectoryPage(section, directoryQueriesRef.current[section], true);
       setToast(`${recordLabel(section)} created`);
     } catch (error) {
       handleRequestError(error, "Could not save this record. Check the API connection.");
@@ -320,7 +554,9 @@ export default function DashboardClient() {
       const result = await apiRequest<Row>(`/api/v1/${resourcePath}/${editingRecord.row.id}`, token, { method: "PUT", body: JSON.stringify(payload) });
       const updated = { ...editingRecord.row, ...payload, ...result, id: result.id ?? editingRecord.row.id };
       setData(current => ({ ...current, [endpoint]: current[endpoint].map(row => row.id === editingRecord.row.id ? updated : row) }));
-      void loadDirectoryPage(editingRecord.section, directoryQueriesRef.current[editingRecord.section]);
+      formOptionsLoadedRef.current = false;
+      if (editingRecord.section === "Vendors") vendorOptionsLoadedRef.current = false;
+      void loadDirectoryPage(editingRecord.section, directoryQueriesRef.current[editingRecord.section], true);
       setToast(`${recordLabel(editingRecord.section)} updated`);
       setEditingRecord(null);
       setModal(null);
@@ -349,7 +585,9 @@ export default function DashboardClient() {
         ...current,
         [endpoint]: current[endpoint].map(item => item.id === row.id ? { ...item, ...updated, status: updated?.status ?? nextStatus } : item),
       }));
-      void loadDirectoryPage(recordSection, directoryQueriesRef.current[recordSection]);
+      formOptionsLoadedRef.current = false;
+      if (recordSection === "Vendors") vendorOptionsLoadedRef.current = false;
+      void loadDirectoryPage(recordSection, directoryQueriesRef.current[recordSection], true);
     } catch (error) {
       handleRequestError(error, `Could not update ${recordLabel(recordSection).toLowerCase()} status.`);
       return;
@@ -359,8 +597,14 @@ export default function DashboardClient() {
 
   async function viewRecord(row: Row, recordSection: Section) {
     const requestId = ++recordRequestId.current;
+    policyFilesRequestIdRef.current += 1;
+    setPolicyFiles(null);
+    setPolicyFilesLoading(false);
+    setPolicyFilesError("");
     setSelectedRecord({ section: recordSection, row });
-    setRecordLoading(recordSection !== "Recycle Bin");
+    const needsDetailRequest = recordSection === "Farmers";
+    setRecordLoading(needsDetailRequest);
+    if (!needsDetailRequest) return;
     const resourcePath = apiResourceBySection[recordSection];
     if (!resourcePath) {
       setRecordLoading(false);
@@ -382,9 +626,105 @@ export default function DashboardClient() {
     }
   }
 
+  async function loadPolicyFiles() {
+    if (selectedRecord?.section !== "Policies") return;
+    const policyId = String(selectedRecord.row.id ?? "");
+    if (!policyId) {
+      setPolicyFilesError("This policy is missing its ID.");
+      return;
+    }
+    const token = window.localStorage.getItem("jbsolar_access_token");
+    if (!token) {
+      setAuthState("signedOut");
+      return;
+    }
+
+    const requestId = ++policyFilesRequestIdRef.current;
+    setPolicyFilesLoading(true);
+    setPolicyFilesError("");
+    try {
+      const response = await apiRequest<unknown>(`/api/v1/policies/${encodeURIComponent(policyId)}/files`, token);
+      if (requestId !== policyFilesRequestIdRef.current) return;
+      if (!Array.isArray(response) || !response.every(isPolicyFileMetadata)) {
+        throw new TypeError("The API returned an invalid policy file list.");
+      }
+      setPolicyFiles({ policyId, items: response });
+    } catch (error) {
+      if (requestId !== policyFilesRequestIdRef.current) return;
+      if (error instanceof ApiError && error.status === 401) {
+        handleRequestError(error, "Your session has expired. Please sign in again.");
+      } else if (error instanceof ApiError && error.status === 403) {
+        setPolicyFilesError("You do not have permission to view policy documents.");
+      } else if (error instanceof ApiError) {
+        setPolicyFilesError(`Could not load policy documents (HTTP ${error.status}). Please try again.`);
+      } else {
+        setPolicyFilesError("Could not load policy documents. Check the connection and try again.");
+      }
+    } finally {
+      if (requestId === policyFilesRequestIdRef.current) setPolicyFilesLoading(false);
+    }
+  }
+
+  async function viewInvoice(row: Row) {
+    const invoiceId = String(row.id ?? "");
+    if (!invoiceId) {
+      setToast("This invoice is missing its ID.");
+      return;
+    }
+
+    const requestId = ++invoiceRequestIdRef.current;
+    const cached = invoiceDetails[invoiceId];
+    if (cached) {
+      setInvoiceToView(cached as unknown as Row);
+      setInvoiceLoading(false);
+      return;
+    }
+
+    const token = window.localStorage.getItem("jbsolar_access_token");
+    if (!token) {
+      setAuthState("signedOut");
+      return;
+    }
+
+    setInvoiceToView(row);
+    setInvoiceLoading(true);
+    try {
+      const detail = await apiRequest<InvoiceData>(`/api/v1/invoices/${encodeURIComponent(invoiceId)}`, token);
+      if (requestId !== invoiceRequestIdRef.current) return;
+      setInvoiceDetails(current => ({ ...current, [invoiceId]: detail }));
+      setInvoiceToView(detail as unknown as Row);
+      lastSyncedAtRef.current = Date.now();
+    } catch (error) {
+      if (requestId === invoiceRequestIdRef.current) {
+        handleRequestError(error, "Could not load invoice details.");
+      }
+    } finally {
+      if (requestId === invoiceRequestIdRef.current) setInvoiceLoading(false);
+    }
+  }
+
+  function closeInvoiceDialog() {
+    invoiceRequestIdRef.current += 1;
+    setInvoiceToView(null);
+    setInvoiceLoading(false);
+  }
+
+  async function downloadInvoice(row: Row) {
+    try {
+      await downloadInvoicePdf(row as unknown as InvoiceData);
+      setToast("Invoice downloaded");
+    } catch {
+      setToast("Could not generate the invoice PDF.");
+    }
+  }
+
   function closeRecordDetails() {
     recordRequestId.current += 1;
+    policyFilesRequestIdRef.current += 1;
     setSelectedRecord(null);
+    setPolicyFiles(null);
+    setPolicyFilesError("");
+    setPolicyFilesLoading(false);
     setRecordLoading(false);
   }
 
@@ -405,6 +745,8 @@ export default function DashboardClient() {
     setDeleteLoading(true);
     try {
       await apiRequest<void>(`/api/v1/${resourcePath}/${recordToDelete.row.id}`, token, { method: "DELETE" });
+      formOptionsLoadedRef.current = false;
+      if (deleteSection === "Vendors") vendorOptionsLoadedRef.current = false;
       setData(current => ({ ...current, [resource]: current[resource].filter(item => item.id !== recordToDelete.row.id) }));
       setDirectoryRows(current => ({ ...current, [deleteSection]: current[deleteSection]?.filter(item => item.id !== recordToDelete.row.id) }));
       setPageMetadata(current => ({
@@ -416,11 +758,13 @@ export default function DashboardClient() {
       const listRefreshed = await loadDirectoryPage(
         deleteSection,
         directoryQueriesRef.current[deleteSection],
+        true,
       );
       setRecordToDelete(null);
       try {
         const recycleBin = await apiRequest<ResourceData["recycleBin"]>("/api/v1/recycle-bin", token);
         setData(current => ({ ...current, recycleBin }));
+        recycleBinLoadedRef.current = true;
         setToast(listRefreshed
           ? `${recordLabel(deleteSection)} moved to recycle bin`
           : `${recordLabel(deleteSection)} deleted; the list could not be refreshed.`);
@@ -457,9 +801,10 @@ export default function DashboardClient() {
       setData(current => ({ ...current, recycleBin: current.recycleBin.filter(item => item.id !== row.id || item.resource !== resource) }));
       const [recycleBin, listRefreshed] = await Promise.all([
         apiRequest<ResourceData["recycleBin"]>("/api/v1/recycle-bin", token),
-        loadDirectoryPage(targetSection, directoryQueriesRef.current[targetSection]),
+        loadDirectoryPage(targetSection, directoryQueriesRef.current[targetSection], true),
       ]);
       setData(current => ({ ...current, recycleBin }));
+      recycleBinLoadedRef.current = true;
       setToast(listRefreshed
         ? `${String(row.label ?? "Record")} restored`
         : `${String(row.label ?? "Record")} restored; the directory could not be refreshed.`);
@@ -519,41 +864,40 @@ export default function DashboardClient() {
     }
   }
 
-  async function downloadInvoice(row: Row) {
-    try {
-      await downloadInvoicePdf(row as unknown as InvoiceData);
-      setToast("Invoice downloaded");
-    } catch {
-      setToast("Could not generate the invoice PDF.");
-    }
-  }
-
   function openSection(nextSection: Section) {
     setSection(nextSection);
   }
 
-  function openCreate() {
+  async function openCreate() {
     if (section === "Overview") setSection("Policies");
     if (section === "Recycle Bin" || section === "Invoices") return;
+    const targetSection = section === "Overview" ? "Policies" : section;
+    if ((targetSection === "Policies" || targetSection === "Agents") && !(await ensureFormOptions(targetSection))) return;
     setEditingRecord(null);
     setModal("create");
   }
 
-  function signOut() {
-    recordRequestId.current += 1;
-    editSavingRef.current = false;
-    setEditSaving(false);
-    window.localStorage.removeItem("jbsolar_access_token");
-    setData(emptyData);
-    setAuthMessage("");
-    setModal(null);
-    setEditingRecord(null);
-    setSelectedRecord(null);
-    setRecordToDelete(null);
-    setRecordToPurge(null);
-    setInvoiceToView(null);
-    setAuthState("signedOut");
-    setSection("Overview");
+  async function openEdit(row: Row) {
+    if (section === "Overview" || section === "Recycle Bin" || section === "Invoices") return;
+    if (section === "Policies" || section === "Agents") {
+      if (!(await ensureFormOptions(section))) return;
+    }
+    setEditingRecord({ section: section as EditableSection, row });
+    setModal("edit");
+  }
+
+  async function refreshCurrentSection() {
+    if (section === "Overview") {
+      await refreshData(undefined, true);
+      return;
+    }
+    if (section === "Recycle Bin") {
+      if (await loadRecycleBin(true)) setToast("Recycle bin refreshed");
+      return;
+    }
+    if (await loadDirectoryPage(section, directoryQueries[section], true)) {
+      setToast(`${section} refreshed`);
+    }
   }
 
   if (authState !== "authenticated") {
@@ -581,7 +925,7 @@ export default function DashboardClient() {
       recycleBinCount={data.recycleBin.length}
       onOpenSection={openSection}
       onAdd={openCreate}
-      onRefresh={() => void refreshData(undefined, true)}
+      onRefresh={() => void refreshCurrentSection()}
       onExport={() => void exportData(section)}
       onSignOut={signOut}
     >
@@ -598,8 +942,8 @@ export default function DashboardClient() {
             onQueryChange={query => updateDirectoryQuery(section, query)}
             onExport={section === "Recycle Bin" || section === "Invoices" ? undefined : query => void exportData(section, query)}
             onToggleStatus={section === "Vendors" || section === "Plans" ? row => void toggleStatus(row, section) : undefined}
-            onEditRecord={section !== "Recycle Bin" && section !== "Invoices" ? row => { setEditingRecord({ section, row }); setModal("edit"); } : undefined}
-            onViewRecord={section === "Invoices" ? row => setInvoiceToView(row) : section !== "Recycle Bin" ? row => void viewRecord(row, section) : undefined}
+            onEditRecord={section !== "Recycle Bin" && section !== "Invoices" ? row => void openEdit(row) : undefined}
+            onViewRecord={section === "Invoices" ? row => void viewInvoice(row) : section !== "Recycle Bin" ? row => void viewRecord(row, section) : undefined}
             onDeleteRecord={section !== "Recycle Bin" && section !== "Invoices" ? row => setRecordToDelete({ section, row }) : undefined}
             onRestoreRecord={section === "Recycle Bin" ? row => void restoreRecord(row) : undefined}
             onPurgeRecord={section === "Recycle Bin" ? row => setRecordToPurge({ section, row }) : undefined}
@@ -617,8 +961,17 @@ export default function DashboardClient() {
       onSubmit={submitEdit}
       onClose={() => { if (!editSaving) { setModal(null); setEditingRecord(null); } }}
     />}
-    {invoiceToView && <InvoiceDialog row={invoiceToView} onClose={() => setInvoiceToView(null)} onDownload={downloadInvoice} />}
-    {selectedRecord && <RecordDetailsDialog record={selectedRecord} loading={recordLoading} onClose={closeRecordDetails} />}
+    {invoiceToView && <InvoiceDialog row={invoiceToView} loading={invoiceLoading} onClose={closeInvoiceDialog} onDownload={downloadInvoice} />}
+    {selectedRecord && <RecordDetailsDialog
+      key={`${selectedRecord.section}-${selectedRecord.row.id ?? "record"}`}
+      record={selectedRecord}
+      loading={recordLoading}
+      policyFiles={selectedRecord.section === "Policies" && policyFiles?.policyId === String(selectedRecord.row.id ?? "") ? policyFiles.items : null}
+      policyFilesLoading={policyFilesLoading}
+      policyFilesError={policyFilesError}
+      onLoadPolicyFiles={() => void loadPolicyFiles()}
+      onClose={closeRecordDetails}
+    />}
     {recordToDelete && <RecordDeleteDialog record={recordToDelete} deleting={deleteLoading} onDelete={() => void confirmDelete()} onClose={() => { if (!deleteLoading) setRecordToDelete(null); }} />}
     {recordToPurge && <RecycleBinPurgeDialog record={recordToPurge} deleting={deleteLoading} onDelete={() => void confirmPurge()} onClose={() => { if (!deleteLoading) setRecordToPurge(null); }} />}
     {toast && <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-[70] max-w-[calc(100vw-40px)] rounded-[6px] bg-[#203d2d] px-4 py-3 text-[12px] font-medium text-white shadow-lg">{toast}</div>}

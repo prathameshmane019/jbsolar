@@ -40,6 +40,18 @@ export type Vendor = Row & { id: string; vendorCode:string; name: string; contac
 export type Agent = Row & { id: string; fullName: string; mobile: string; vendorName?: string; status: Status };
 export type Plan = Row & { id: string; name: string; durationMonths: number; price: number; gstPercentage: number; status: Status };
 export type Policy = Row & { id: string; policyNumber: string; farmerName: string; planName: string; startDate: string; endDate: string; totalAmount: number; status: Status };
+export type PolicyFileMetadata = {
+  id: string;
+  resourceType: string;
+  resourceId: string;
+  purpose: string;
+  originalFilename: string;
+  contentType: string;
+  fileSize: number;
+  uploadedAt: string;
+  viewUrl: string;
+  viewUrlExpiresAt: string;
+};
 export type RecycleBinEntry = { resource: string; id: string; label: string; deletedAt: string };
 export type ResourceData = { policies: Policy[]; farmers: Farmer[]; vendors: Vendor[]; agents: Agent[]; plans: Plan[]; recycleBin: RecycleBinEntry[];invoices: InvoiceData[] };
 export type ReferenceData = Pick<ResourceData, "farmers" | "vendors" | "plans" | "agents">;
@@ -121,7 +133,7 @@ export const sectionDescriptions: Record<Section, string> = {
   Agents: "Manage the people growing your field network.",
   Plans: "Configure the protection products you offer.",
   "Recycle Bin": "Restore deleted records or permanently remove them.",
-  Invoices: "View and manage all invoices related to policies.",
+  Invoices: "View invoices issued for policies and download PDF copies.",
 };
 
 export function formatCurrency(value: number) {

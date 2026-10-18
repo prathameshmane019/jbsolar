@@ -13,8 +13,9 @@ function Pair({ label, children }: { label: string; children: ReactNode }) {
   </div>;
 }
 
-export function InvoiceDialog({ row, onClose, onDownload }: {
+export function InvoiceDialog({ row, loading = false, onClose, onDownload }: {
   row: Row;
+  loading?: boolean;
   onClose: () => void;
   onDownload: (row: Row) => Promise<void>;
 }) {
@@ -39,6 +40,8 @@ export function InvoiceDialog({ row, onClose, onDownload }: {
         <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${paid ? "bg-[#e2f1d6] text-[#285c3b]" : "bg-white/15 text-white"}`}>{paid ? "Paid" : "Pending"}</span>
       </div>
 
+      {loading && <p role="status" className="text-[11px] text-[#687266]">Loading invoice details...</p>}
+
       <dl className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-[6px] border border-[#e8eae3] p-4">
         <Pair label="Invoice date">{formatDate(inv.invoiceDate)}</Pair>
         <Pair label="Policy number">{inv.policyNumber}</Pair>
@@ -60,7 +63,7 @@ export function InvoiceDialog({ row, onClose, onDownload }: {
 
       <div className="flex justify-end gap-2 border-t border-[#edf0e9] pt-4">
         <button type="button" onClick={onClose} className="h-9 rounded-[5px] px-3 text-[11px] font-semibold text-[#626b60] hover:bg-[#f1f3ee]">Close</button>
-        <button type="button" onClick={() => void download()} disabled={busy} aria-busy={busy} className="inline-flex h-9 items-center gap-2 rounded-[5px] bg-[#285c3b] px-4 text-[11px] font-semibold text-white hover:bg-[#1f4d31] disabled:cursor-wait disabled:opacity-60">
+        <button type="button" onClick={() => void download()} disabled={busy || loading} aria-busy={busy || loading} className="inline-flex h-9 items-center gap-2 rounded-[5px] bg-[#285c3b] px-4 text-[11px] font-semibold text-white hover:bg-[#1f4d31] disabled:cursor-wait disabled:opacity-60">
           {busy ? <span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Icon name="download" size={14} />}
           {busy ? "Preparing PDF..." : "Download PDF"}
         </button>
