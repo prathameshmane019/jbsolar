@@ -24,9 +24,15 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 The dashboard caches recently loaded workspace data in tab-scoped `sessionStorage` for up to five minutes. Cached data is shown on reload; data older than five minutes is revalidated on startup. Use the refresh button to sync the current section immediately. Signing out clears the cached workspace. Browser session storage is not encrypted, so sign out when using a shared device.
 
-Invoices are loaded only when the Invoices section is opened. Opening an invoice fetches its full detail once per tab session and reuses the cached response; invoice PDFs are generated on the client.
+The recycle bin is fetched only when opened. Directory searches are debounced, and superseded directory/refresh requests are aborted. Workspace cache writes are deferred briefly to avoid serializing large state updates on every render.
+
+Invoices are loaded only when the Invoices section is opened. Opening an invoice fetches its full detail once per tab session and reuses the cached response; invoice PDFs and the `jspdf` library are loaded/generated on demand. Dashboard directories, forms, and dialogs are split into client-side chunks and loaded when needed.
 
 Policy documents are fetched only after selecting **Load documents** in a policy's details. Their signed view links are kept in memory, and **Refresh documents** requests new links when needed.
+
+The sign-in page is server-rendered, but protected workspace data is currently fetched in the browser because the access token is stored in `localStorage`. To safely server-render authenticated data, move authentication to a server-managed `HttpOnly`, `Secure`, `SameSite` cookie and proxy/authorize API requests on the server. Rate limiting and login brute-force protection must be enforced by the backend or API gateway; browser-side throttling is not a security control.
+
+The frontend does not automatically retry throttled or failed requests. It surfaces HTTP 429 responses and honors the server's `Retry-After` guidance so retries do not amplify request load.
 
 ## Learn More
 

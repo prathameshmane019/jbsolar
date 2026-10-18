@@ -4,10 +4,19 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+function parseRetryAfterSeconds(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  const retryAt = Date.parse(value);
+  return Number.isNaN(retryAt) ? undefined : Math.max(0, (retryAt - Date.now()) / 1000);
 }
 
 export async function apiRequest<T>(
@@ -26,7 +35,11 @@ export async function apiRequest<T>(
   });
   if (!response.ok) {
     const message = await response.text();
-    throw new ApiError(message || `Request failed (${response.status})`, response.status);
+    throw new ApiError(
+      message || `Request failed (${response.status})`,
+      response.status,
+      parseRetryAfterSeconds(response.headers.get("retry-after")),
+    );
   }
   if (response.status === 204) return undefined as T;
   const body = await response.text();
@@ -40,7 +53,11 @@ export async function apiDownload(path: string, token: string) {
   });
   if (!response.ok) {
     const message = await response.text();
-    throw new ApiError(message || `Export failed (${response.status})`, response.status);
+    throw new ApiError(
+      message || `Export failed (${response.status})`,
+      response.status,
+      parseRetryAfterSeconds(response.headers.get("retry-after")),
+    );
   }
   return {
     blob: await response.blob(),

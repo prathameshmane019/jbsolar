@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { DataTable, Metric } from "./ui";
 import { formatCurrency, type ResourceData, type Row } from "./types";
-import { columnsFor } from "./directory-page";
+import { columnsFor } from "./record-columns";
 
 export function OverviewPage({
   data,

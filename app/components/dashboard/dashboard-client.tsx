@@ -1,13 +1,10 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { DashboardShell } from "./dashboard-shell";
-import { DirectoryPage } from "./directory-page";
-import { OverviewPage } from "./overview-page";
-import { CreateForm, type EditableSection } from "./record-forms";
-import { RecordDeleteDialog, RecordDetailsDialog, RecordEditDialog, RecycleBinPurgeDialog } from "./record-dialogs";
+import type { EditableSection } from "./record-forms";
 import { Field, Icon, Modal } from "./ui";
 import { apiDownload, apiRequest, ApiError, normalizePageResponse, serializeDirectoryQuery } from "./api";
-import { InvoiceDialog } from "../InvoiceDialog";
 import { downloadInvoicePdf, type InvoiceData } from "@/app/InvoicePDF";
 import {
   clearWorkspaceCache,
@@ -42,14 +39,30 @@ import {
   recordLabel,
 } from "./types";
 
+const DirectoryPage = dynamic(() => import("./directory-page").then(module => module.DirectoryPage), {
+  loading: () => <div role="status" className="rounded-[8px] border border-[#e8eae3] bg-white px-5 py-12 text-center text-[12px] text-[#687266]">Loading directory…</div>,
+});
+const OverviewPage = dynamic(() => import("./overview-page").then(module => module.OverviewPage), {
+  loading: () => <div role="status" className="rounded-[8px] border border-[#e8eae3] bg-white px-5 py-12 text-center text-[12px] text-[#687266]">Loading overview…</div>,
+});
+const CreateForm = dynamic(() => import("./record-forms").then(module => module.CreateForm), {
+  loading: () => <p role="status" className="py-6 text-center text-[12px] text-[#687266]">Loading form…</p>,
+});
+const RecordEditDialog = dynamic(() => import("./record-dialogs").then(module => module.RecordEditDialog));
+const RecordDeleteDialog = dynamic(() => import("./record-dialogs").then(module => module.RecordDeleteDialog));
+const RecordDetailsDialog = dynamic(() => import("./record-dialogs").then(module => module.RecordDetailsDialog));
+const RecycleBinPurgeDialog = dynamic(() => import("./record-dialogs").then(module => module.RecycleBinPurgeDialog));
+const InvoiceDialog = dynamic(() => import("../InvoiceDialog").then(module => module.InvoiceDialog));
+
 async function fetchPage<T extends Row>(
   path: string,
   token: string,
   query: DirectoryQuery,
   suffix = "",
+  signal?: AbortSignal,
 ): Promise<NormalizedPageResponse<T>> {
   const queryString = serializeDirectoryQuery(query);
-  const response = await apiRequest<PageResponse<T>>(`${path}?${queryString}${suffix}`, token);
+  const response = await apiRequest<PageResponse<T>>(`${path}?${queryString}${suffix}`, token, { signal });
   return normalizePageResponse(response, query.page, query.size);
 }
 
@@ -98,10 +111,13 @@ export default function DashboardClient() {
   const vendorOptionsLoadedRef = useRef(false);
   const vendorOptionsRequestRef = useRef<Promise<ResourceData["vendors"]> | null>(null);
   const directoryRequestIds = useRef<Partial<Record<ListSection, number>>>({});
+  const directoryControllersRef = useRef<Partial<Record<ListSection, AbortController>>>({});
   const loadedDirectoryQueriesRef = useRef<Partial<Record<ListSection, string>>>({});
   const recycleBinLoadedRef = useRef(false);
   const lastSyncedAtRef = useRef(0);
   const workspaceRequestIdRef = useRef(0);
+  const refreshRequestIdRef = useRef(0);
+  const refreshControllerRef = useRef<AbortController | null>(null);
   const [authState, setAuthState] = useState<AuthState>("signedOut");
   const [authMessage, setAuthMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -129,9 +145,15 @@ export default function DashboardClient() {
     workspaceRequestIdRef.current += 1;
     recordRequestId.current += 1;
     policyFilesRequestIdRef.current += 1;
+    refreshRequestIdRef.current += 1;
+    refreshControllerRef.current?.abort();
+    refreshControllerRef.current = null;
     for (const listSection of Object.keys(directoryRequestIds.current) as ListSection[]) {
       directoryRequestIds.current[listSection] = (directoryRequestIds.current[listSection] ?? 0) + 1;
+      directoryControllersRef.current[listSection]?.abort();
+      delete directoryControllersRef.current[listSection];
     }
+    setLoading(false);
     editSavingRef.current = false;
     setEditSaving(false);
     window.localStorage.removeItem("jbsolar_access_token");
@@ -195,7 +217,8 @@ export default function DashboardClient() {
       vendorOptionsLoaded: vendorOptionsLoadedRef.current,
       recycleBinLoaded: recycleBinLoadedRef.current,
     };
-    writeWorkspaceCache(snapshot);
+    const timer = window.setTimeout(() => writeWorkspaceCache(snapshot), 250);
+    return () => window.clearTimeout(timer);
   }, [authState, data, invoiceDetails, directoryRows, pageMetadata, directoryQueries, formOptions, vendorOptions]);
 
   const refreshData = useCallback(async (
@@ -206,24 +229,25 @@ export default function DashboardClient() {
       setAuthState("signedOut");
       return;
     }
-    const requestId = workspaceRequestIdRef.current;
+    const requestId = ++refreshRequestIdRef.current;
+    refreshControllerRef.current?.abort();
+    const controller = new AbortController();
+    refreshControllerRef.current = controller;
     setLoading(true);
     if (!preserveWorkspace) setAuthState("loading");
     setAuthMessage("");
     try {
-      const [policies, farmers, vendors, recycleBin] = await Promise.all([
-        fetchPage<ResourceData["policies"][number]>("/api/v1/policies", token, directoryQueriesRef.current.Policies),
-        fetchPage<ResourceData["farmers"][number]>("/api/v1/farmers", token, directoryQueriesRef.current.Farmers),
-        fetchPage<ResourceData["vendors"][number]>("/api/v1/vendors", token, directoryQueriesRef.current.Vendors),
-        apiRequest<ResourceData["recycleBin"]>("/api/v1/recycle-bin", token),
+      const [policies, farmers, vendors] = await Promise.all([
+        fetchPage<ResourceData["policies"][number]>("/api/v1/policies", token, directoryQueriesRef.current.Policies, "", controller.signal),
+        fetchPage<ResourceData["farmers"][number]>("/api/v1/farmers", token, directoryQueriesRef.current.Farmers, "", controller.signal),
+        fetchPage<ResourceData["vendors"][number]>("/api/v1/vendors", token, directoryQueriesRef.current.Vendors, "", controller.signal),
       ]);
-      if (requestId !== workspaceRequestIdRef.current) return;
+      if (requestId !== refreshRequestIdRef.current) return;
       setData(current => ({
         ...current,
         policies: policies.content,
         farmers: farmers.content,
         vendors: vendors.content,
-        recycleBin,
       }));
       setDirectoryRows(current => ({
         ...current,
@@ -241,7 +265,6 @@ export default function DashboardClient() {
       vendorOptionsDataRef.current = vendors.content;
       setFormOptions(current => ({ ...current, vendors: vendors.content }));
       vendorOptionsLoadedRef.current = vendors.totalElements <= vendors.content.length;
-      recycleBinLoadedRef.current = true;
       loadedDirectoryQueriesRef.current = {
         ...loadedDirectoryQueriesRef.current,
         Policies: directoryQueryKey(directoryQueriesRef.current.Policies, "Policies"),
@@ -252,7 +275,8 @@ export default function DashboardClient() {
       setAuthState("authenticated");
       setToast("Data synced");
     } catch (error) {
-      if (requestId !== workspaceRequestIdRef.current) return;
+      if (requestId !== refreshRequestIdRef.current) return;
+      if (error instanceof DOMException && error.name === "AbortError") return;
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
         signOut();
         setAuthMessage("Your session has expired. Please sign in again.");
@@ -263,7 +287,10 @@ export default function DashboardClient() {
         setAuthState("error");
       }
     } finally {
-      setLoading(false);
+      if (requestId === refreshRequestIdRef.current) {
+        refreshControllerRef.current = null;
+        setLoading(false);
+      }
     }
   }, [signOut]);
 
@@ -300,6 +327,13 @@ export default function DashboardClient() {
       clearWorkspaceCache();
       signOut();
       setAuthMessage("Your session has expired. Please sign in again.");
+      return;
+    }
+    if (error instanceof ApiError && error.status === 429) {
+      const retryMessage = error.retryAfterSeconds === undefined
+        ? " Please wait before trying again."
+        : ` Please try again in ${Math.ceil(error.retryAfterSeconds)} seconds.`;
+      setToast(`${message}${retryMessage}`);
       return;
     }
     setToast(message);
@@ -391,7 +425,15 @@ export default function DashboardClient() {
     const resourcePath = apiResourceBySection[target];
     if (!token || !resourcePath) return false;
     const queryKey = directoryQueryKey(query, target);
-    if (!force && loadedDirectoryQueriesRef.current[target] === queryKey) return true;
+    if (!force && loadedDirectoryQueriesRef.current[target] === queryKey) {
+      directoryControllersRef.current[target]?.abort();
+      delete directoryControllersRef.current[target];
+      directoryRequestIds.current[target] = (directoryRequestIds.current[target] ?? 0) + 1;
+      return true;
+    }
+    directoryControllersRef.current[target]?.abort();
+    const controller = new AbortController();
+    directoryControllersRef.current[target] = controller;
     const requestId = (directoryRequestIds.current[target] ?? 0) + 1;
     directoryRequestIds.current[target] = requestId;
     setLoading(true);
@@ -401,6 +443,7 @@ export default function DashboardClient() {
         token,
         query,
         target === "Plans" ? "&activeOnly=false" : "",
+        controller.signal,
       );
       if (directoryRequestIds.current[target] !== requestId) return false;
       const lastPage = Math.max(0, page.totalPages - 1);
@@ -422,6 +465,7 @@ export default function DashboardClient() {
       return true;
     } catch (error) {
       if (directoryRequestIds.current[target] !== requestId) return false;
+      if (error instanceof DOMException && error.name === "AbortError") return false;
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
         signOut();
         setAuthMessage("Your session has expired. Please sign in again.");
@@ -430,7 +474,10 @@ export default function DashboardClient() {
       }
       return false;
     } finally {
-      if (directoryRequestIds.current[target] === requestId) setLoading(false);
+      if (directoryRequestIds.current[target] === requestId) {
+        delete directoryControllersRef.current[target];
+        setLoading(false);
+      }
     }
   }, [signOut]);
 
@@ -482,6 +529,11 @@ export default function DashboardClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mobile: form.get("mobile"), password: form.get("password") }),
       });
+      if (response.status === 429) {
+        setAuthMessage("Too many sign-in attempts. Please wait before trying again.");
+        setAuthState("signedOut");
+        return;
+      }
       if (!response.ok) throw new Error("Login failed");
       const result = await response.json();
       window.localStorage.setItem("jbsolar_access_token", result.accessToken);
@@ -655,6 +707,11 @@ export default function DashboardClient() {
         handleRequestError(error, "Your session has expired. Please sign in again.");
       } else if (error instanceof ApiError && error.status === 403) {
         setPolicyFilesError("You do not have permission to view policy documents.");
+      } else if (error instanceof ApiError && error.status === 429) {
+        const retryMessage = error.retryAfterSeconds === undefined
+          ? "Please wait before trying again."
+          : `Try again in ${Math.ceil(error.retryAfterSeconds)} seconds.`;
+        setPolicyFilesError(`The server is limiting requests. ${retryMessage}`);
       } else if (error instanceof ApiError) {
         setPolicyFilesError(`Could not load policy documents (HTTP ${error.status}). Please try again.`);
       } else {
